@@ -1,0 +1,95 @@
+<main class="screen">
+    <header class="page-heading">
+        <div>
+            <p class="eyebrow">Customer insight</p>
+            <h1>Feedback &amp; experiments</h1>
+            <p class="screen-intro">
+                Capture dish-level comments, correct mistaken entries, and turn repeated themes into
+                controlled—not automatic—recipe experiments.
+            </p>
+        </div>
+    </header>
+
+    @if (message()) {
+    <p class="message">{{ message() }}</p>
+    }
+
+    @if (experiment(); as item) {
+    <section class="screen-grid">
+        <article class="screen-card">
+            <p class="eyebrow">Capture feedback</p>
+            <h2>Paneer Sandwich</h2>
+
+            <label>
+                Customer comment
+                <textarea [ngModel]="comment()" (ngModelChange)="comment.set($event)"
+                    placeholder="For example: The sandwich was dry"></textarea>
+            </label>
+
+            <label>
+                Rating
+                <select [ngModel]="rating()" (ngModelChange)="rating.set($event)">
+                    <option [ngValue]="5">5 - Excellent</option>
+                    <option [ngValue]="4">4 - Good</option>
+                    <option [ngValue]="3">3 - Average</option>
+                    <option [ngValue]="2">2 - Poor</option>
+                    <option [ngValue]="1">1 - Bad</option>
+                </select>
+            </label>
+
+            <button class="action-button" (click)="add()">Save feedback</button>
+
+            <div class="section-heading subsection-heading">
+                <h2>Recent comments</h2>
+                <span class="count-badge">{{ comments().length }}</span>
+            </div>
+
+            @for (feedback of comments(); track feedback.id) {
+            <div class="list-row">
+                <div>
+                    <strong>"{{ feedback.text }}"</strong>
+                    <small>
+                        {{ feedback.rating }}/5.
+                        {{ feedback.occurredAt | date: 'mediumDate' }}
+                        {{ feedback.source }}
+                    </small>
+                </div>
+
+                <button class="icon-button" (click)="remove(feedback.id)" aria-label="Delete feedback"
+                    data-tooltip="Delete this mistaken feedback entry"></button>
+            </div>
+            }
+        </article>
+
+        <aside class="screen-card experiment-card">
+            <p class="eyebrow">Pattern detected</p>
+            <h2>{{ item.theme }}</h2>
+
+            <p class="screen-intro">
+                {{ item.themeCount }} of {{ item.feedbackCount }} recent comments meet the experiment
+                threshold.
+            </p>
+
+            <div class="experiment-change">
+                <small>Proposed controlled test</small>
+                <strong>
+                    Butter: {{ item.currentButterGrams }}g → {{ item.proposedButterGrams }}g
+                </strong>
+                <span>{{ item.testDurationDays }} days</span>
+            </div>
+
+            @if (item.status === 'PROPOSED') {
+            <button class="action-button wide-action" (click)="approve()"
+                data-tooltip="Start the test without changing the permanent recipe">
+                Approve experiment
+            </button>
+            } @else {
+            <p class="approval-note">
+                Experiment is active. BizLaMa will collect evidence; it will not silently make the
+                permanent recipe change.
+            </p>
+            }
+        </aside>
+    </section>
+    }
+</main>
