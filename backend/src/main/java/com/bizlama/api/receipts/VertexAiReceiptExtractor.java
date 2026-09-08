@@ -76,7 +76,7 @@ public class VertexAiReceiptExtractor implements ReceiptExtractor {
                                             .asText("pieces"),
                                     decimal(item.get("unitPrice")),
                                     item.path("confidence")
-                                            .asDouble(0)
+                                            .asDouble(0.5)
                             )
                     )
             );

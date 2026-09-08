@@ -1,16 +1,5 @@
 package com.bizlama.api.receipts;
 
-import com.bizlama.api.catalog.ProductNormalizer;
-import com.bizlama.api.domain.ReceiptImport;
-import com.bizlama.api.domain.StockLot;
-import com.bizlama.api.shelflife.ShelfLifeGuidanceProvider;
-import com.bizlama.api.store.OperationalRepository;
-
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
-
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -28,6 +17,17 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+
+import com.bizlama.api.catalog.ProductNormalizer;
+import com.bizlama.api.domain.ReceiptImport;
+import com.bizlama.api.domain.StockLot;
+import com.bizlama.api.shelflife.ShelfLifeGuidanceProvider;
+import com.bizlama.api.store.OperationalRepository;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 
 @RestController
 @RequestMapping("/api/receipts")
@@ -121,14 +121,14 @@ public class ReceiptController {
 
         ReceiptImport receipt = new ReceiptImport(
                 id,
+                file.getOriginalFilename(),
+                stored.uri(),
+                ReceiptImport.Status.NEEDS_REVIEW,
                 extraction.merchant(),
                 extraction.purchaseDate(),
                 extraction.total(),
                 Instant.now(),
-                items,
-                file.getOriginalFilename(),
-                stored.uri(),
-                ReceiptImport.Status.NEEDS_REVIEW
+                items
         );
 
         repository.saveReceipt(receipt);

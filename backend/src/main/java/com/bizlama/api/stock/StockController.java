@@ -1,15 +1,5 @@
 package com.bizlama.api.stock;
 
-import com.bizlama.api.domain.StockLot;
-import com.bizlama.api.domain.StockMovement;
-import com.bizlama.api.store.OperationalRepository;
-import com.bizlama.api.stock.ShelfLifeGuidanceProvider;
-
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
-
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -23,6 +13,19 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+
+import com.bizlama.api.common.PageResponse;
+import com.bizlama.api.domain.InventoryLot;
+import com.bizlama.api.domain.InventorySummary;
+import com.bizlama.api.domain.StockLot;
+import com.bizlama.api.domain.StockMovement;
+import com.bizlama.api.shelflife.ShelfLifeGuidanceProvider;
+import com.bizlama.api.store.OperationalRepository;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 
 @RestController
 @RequestMapping("/api/stock")
@@ -45,7 +48,7 @@ public class StockController {
 
     @GetMapping("/search")
     public PageResponse<InventoryLot> search(
-            @RequestParam(defaultValue = "*") String query,
+            @RequestParam(defaultValue = "") String query,
             @RequestParam(defaultValue = "all") String status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size) {

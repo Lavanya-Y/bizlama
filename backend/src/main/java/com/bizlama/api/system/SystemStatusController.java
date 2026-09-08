@@ -22,7 +22,7 @@ public class SystemStatusController {
             @Value("${bizlama.receipts.storage-mode:local}") String receiptStorage,
             @Value("${bizlama.bigquery.enabled:false}") boolean analyticsEnabled,
             @Value("${bizlama.receipts.ai-enabled:false}") boolean aiEnabled,
-            @Value("${bizlama.auth-mode:local}") String authMode) {
+            @Value("${bizlama.auth.mode:local}") String authMode) {
 
         this.databaseUrl = databaseUrl;
         this.receiptStorage = receiptStorage;
