@@ -45,7 +45,7 @@ public class KitchenEventController {
 
         boolean autoApply = events.stream()
                 .allMatch(event ->
-                        event.confidence() >= autoApplyThreshold
+                        event.confidence() > autoApplyThreshold
                 );
 
         if (autoApply) {
@@ -67,7 +67,7 @@ public class KitchenEventController {
 
         return new ParseKitchenEventResponse(
                 events,
-                autoApply,
+                !autoApply,
                 autoApply
         );
     }

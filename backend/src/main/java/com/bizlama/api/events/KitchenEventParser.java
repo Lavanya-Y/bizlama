@@ -19,7 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class KitchenEventParser {
 
     private static final Pattern QUANTITY_PATTERN = Pattern.compile(
-            "(\\d+(?:\\.\\d+)?)\\s*(kg|g|ml|litres?|liters?|pieces?|pcs?)?"
+            "(\\d+(?:\\.\\d+)?)\\s*(kg|g|l|ml|litres?|liters?|pieces?|pcs?)?"
     );
 
     private final OperationalRepository repository;
@@ -382,7 +382,7 @@ public class KitchenEventParser {
 
             return new Quantity(
                     value,
-                    unit.equals("pieces") ? "pieces" : unit
+                    unit.equals("pieces") ? base : unit
             );
         }
 

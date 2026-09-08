@@ -1,0 +1,12 @@
+# Java/Maven build output
+backend/target/ 
+target/
+
+# Frontend generated files
+frontend/node_modules/ 
+frontend/dist/
+
+# IDE and operating-system files
+.idea/
+*.iml
+.DS_Store

@@ -1,6 +1,6 @@
 package com.bizlama.api.events;
 
-public record ParsedKitchenEventType(
+public record ParsedKitchenEvent(
     KitchenEventType type, 
     String item,
     String itemId,

@@ -7,7 +7,7 @@ import java.util.List;
 
 public record ReceiptImport (
     String id,
-    String OriginalFilename,
+    String originalFilename,
     String objectUri,
     Status status,
     String merchant,
