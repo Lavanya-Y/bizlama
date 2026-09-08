@@ -6,9 +6,9 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
-public class BizlaMaApplication {
+public class BizLaMaApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(BizlaMaApplication.class, args);
+        SpringApplication.run(BizLaMaApplication.class, args);
     }
 }
