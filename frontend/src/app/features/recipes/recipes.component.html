@@ -58,7 +58,7 @@
 
             <label>
                 Selling price (₹)
-                <input type="number" min="1" step="1" placeholder="200" [ngModel]="newDishPrice()"
+                <input type="number" min="1" step="1" placeholder="280" [ngModel]="newDishPrice()"
                     (ngModelChange)="newDishPrice.set($event)">
             </label>
 
@@ -79,7 +79,7 @@
                     </div>
 
                     <button type="button" class="small-action" (click)="addNewDishIngredient()" [disabled]="
-                newDishIngredients().length >= ingredients().length
+                newDishIngredients().length === ingredients().length
               " data-tooltip="Add another stock ingredient">
                         Add ingredient
                     </button>
@@ -130,7 +130,7 @@
                         </label>
 
                         <button class="icon-button" type="button" (click)="removeNewDishIngredient(index)"
-                            [disabled]="newDishIngredients().length <= 1" aria-label="Remove ingredient"
+                            [disabled]="newDishIngredients().length === 1" aria-label="Remove ingredient"
                             data-tooltip="Remove this ingredient">x</button>
                     </div>
                     } @empty {
@@ -177,7 +177,7 @@
                         </label>
 
                         <button class="icon-button" type="button" (click)="removeNewDishStep(index)"
-                            [disabled]="newDishSteps().length <= 1" aria-label="Remove step"
+                            [disabled]="newDishSteps().length === 1" aria-label="Remove step"
                             data-tooltip="Remove this preparation step">x</button>
                     </div>
                     }

@@ -48,7 +48,7 @@ This file records the cloud setup in short, repeatable steps. It must never cont
 - [x] Installed Java 21 locally and verified the Spring Boot application starts with it
 - [x] Created the working copy outside OneDrive
 - [x] Rebuilt frontend dependencies locally with `npm ci` (539 packages, 0 reported vulnerabilities)
-- [x] Verified Angular on port 4200, Spring Boot on port 8888, and the frontend API proxy
+- [x] Verified Angular on port 4200, Spring Boot on port 8080, and the frontend API proxy
 - [x] Reworked the application shell with expanded, collapsed, and mobile navigation states
 - [x] Reduced the dashboard to priorities, summary metrics, quick actions, and recent activity
 - [x] Moved natural-language capture to the dedicated `/activity` page
@@ -61,7 +61,7 @@ This file records the cloud setup in short, repeatable steps. It must never cont
 - [x] Added BigQuery operational-event publishing with a local no-op fallback
 - [x] Added a single-container Cloud Run build and repeatable GCP bootstrap/deploy scripts
 - [x] Added app-level owner authentication, protected APIs, Secret Manager-backed cloud credentials, and optional Identity Platform token validation
-- [x] Added multi-tenant kitchen updates and scalable recipe ingredient/step editing
+- [x] Added multi-item kitchen updates and scalable recipe ingredient/step editing
 - [x] Added accessible contextual tooltips to navigation and important actions
 - [x] Added server-side pagination, search, filtering and aggregate summaries for inventory and orders
 - [x] Added extensible kitchens, locations, users, suppliers, categories, order history and analytics-outbox schema

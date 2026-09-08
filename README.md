@@ -52,7 +52,7 @@ Data is stored in `backend/.data/bizlama.mv.db` and survives restarts.
 To deliberately test the fallback instead, start the backend with:
 
 ```bash
-SPRING_PROFILES_ACTIVE=memory
+--spring.profiles.active=memory
 ```
 
 ## Deploy to the prepared GCP project

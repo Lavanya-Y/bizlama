@@ -26,7 +26,7 @@ yarn-error.log
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
-history/*
+.history/*
 
 # Miscellaneous
 /.angular/cache
@@ -36,7 +36,7 @@ history/*
 /libpeerconnection.log
 testem.log
 /typings
-_screenshots
+__screenshots__/
 
 # System files
 .DS_Store
