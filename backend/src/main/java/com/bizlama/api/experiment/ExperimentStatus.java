@@ -1,5 +1,6 @@
 package com.bizlama.api.experiment;
 
-public class ExperimentStatus {
-    
+public enum ExperimentStatus {
+    PROPOSED,
+    ACTIVE
 }
