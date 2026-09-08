@@ -1,0 +1,174 @@
+<main class="screen receipts-screen">
+    <header class="page-heading">
+        <div>
+            <p class="eyebrow">Purchase capture</p>
+            <h1>Receipt inbox</h1>
+            <p class="screen-intro">
+                Upload a grocery receipt, review how branded products map to your ingredient catalog,
+                then add only the approved lines to stock.
+            </p>
+        </div>
+    </header>
+
+    <section class="receipt-layout">
+        <div class="receipt-column">
+            <article class="screen-card upload-card">
+                <div>
+                    <p class="eyebrow">Receipt</p>
+                    <h2>Upload a photo or PDF</h2>
+                    <p>
+                        BizLaMa will prepare the lines for you. Check before anything is added to stock.
+                    </p>
+                </div>
+
+                <label class="file-action" data-tooltip="Upload a JPG, PNG or PDF up to 10 MB">
+                    <input type="file" accept="image/*,.pdf" (change)="chooseFile($event)"
+                        [disabled]="uploading()">
+                    <span>
+                        {{ uploading() ? 'Processing...' : 'Choose receipt' }}
+                    </span>
+                </label>
+            </article>
+
+            @if (message()) {
+            <p class="message inline-message">{{ message() }}</p>
+            }
+
+            <article class="screen-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">History</p>
+                        <h2>Uploaded receipts</h2>
+                    </div>
+                    <span class="count-badge">{{ receipts().length }}</span>
+                </div>
+
+                @for (receipt of receipts(); track receipt.id) {
+                <button type="button" class="receipt-history-row" (click)="open(receipt)">
+                    <div>
+                        <strong>{{ receipt.originalFilename }}</strong>
+                        <small>
+                            {{ receipt.merchant || 'Merchant not detected' }}
+                            ·
+                            {{ receipt.createdAt | date: 'medium' }}
+                        </small>
+                    </div>
+
+                    <span class="status-pill" [class.good]="receipt.status === 'CONFIRMED'">
+                        {{ receipt.status === 'CONFIRMED' ? 'Added to stock' : 'Review' }}
+                    </span>
+                </button>
+                } @empty {
+                <div class="empty-state">
+                    <strong>No receipts yet</strong>
+                    <span>Your uploads will appear here.</span>
+                </div>
+                }
+            </article>
+        </div>
+
+        @if (selected(); as receipt) {
+        <article class="screen-card receipt-review">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Receipt review</p>
+                    <h2>{{ receipt.originalFilename }}</h2>
+                </div>
+
+                <span class="status-pill">{{ receipt.status }}</span>
+            </div>
+
+            <div class="receipt-meta">
+                <label>
+                    Merchant
+                    <input [ngModel]="receipt.merchant" disabled>
+                </label>
+
+                <label>
+                    Purchase date
+                    <input type="date" [ngModel]="receipt.purchaseDate" (ngModelChange)="updatePurchaseDate($event)">
+                </label>
+            </div>
+
+            <div class="receipt-lines-heading">
+                <strong>Receipt lines</strong>
+
+                <button class="secondary-action" type="button" (click)="addLine()"
+                    data-tooltip="Add an item the receipt reader missed">
+                    Add line
+                </button>
+            </div>
+
+            @for (item of receipt.items; track item.id; let index = $index) {
+            <div class="receipt-line">
+                <label class="check-control">
+                    <input type="checkbox" [ngModel]="item.selected"
+                        (ngModelChange)="updateLine(index, 'selected', $event)">
+                    <span></span>
+                </label>
+
+                <label>
+                    Printed name
+                    <input [ngModel]="item.rawName" (ngModelChange)="updateLine(index, 'rawName', $event)"
+                        placeholder="Amul fresh paneer">
+                </label>
+
+                <label>
+                    Maps to
+                    <select [ngModel]="item.ingredientId" (ngModelChange)="chooseIngredient(index, $event)">
+                        @for (ingredient of ingredients(); track ingredient.id) {
+                        <option [value]="ingredient.id">
+                            {{ ingredient.name }}
+                        </option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    Quantity
+                    <input type="number" min="0.01" step="0.01" [ngModel]="item.quantity"
+                        (ngModelChange)="updateLine(index, 'quantity', $event)">
+                </label>
+
+                <label>
+                    Unit
+                    <select [ngModel]="item.unit" (ngModelChange)="updateLine(index, 'unit', $event)">
+                        <option>g</option>
+                        <option>kg</option>
+                        <option>ml</option>
+                        <option>l</option>
+                        <option>pcs</option>
+                    </select>
+                </label>
+
+                <div class="line-confidence">
+                    <span>{{ matchLabel(item) }}</span>
+                    <small>name match</small>
+                </div>
+
+                <button class="icon-button" type="button" aria-label="Remove line" (click)="removeLine(index)"
+                    data-tooltip="Remove this receipt line">x</button>
+            </div>
+            }
+
+            <div class="receipt-review-footer">
+                <p>Only the selected items will be added to inventory.</p>
+
+                <button class="action-button" type="button" (click)="confirm()"
+                    [disabled]="receipt.status === 'CONFIRMED' || !receipt.items.length" [attr.data-tooltip]="
+              receipt.status === 'CONFIRMED'
+                ? 'This receipt has already been added to inventory'
+                : 'Add only the selected, reviewed lines to stock'
+            ">
+                    {{ receipt.status === 'CONFIRMED' ? 'Already added' : 'Confirm & add to stock' }}
+                </button>
+            </div>
+        </article>
+        } @else {
+        <article class="screen-card empty-review">
+            <strong>Select or upload a receipt</strong>
+            <span>The review workspace will open here.</span>
+        </article>
+        }
+    </section>
+</main>

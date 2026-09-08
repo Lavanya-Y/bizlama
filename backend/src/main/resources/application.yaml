@@ -6,6 +6,7 @@ spring:
     url: ${BIZLAMA_DB_URL:jdbc:h2:file:./.data/bizlama;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH}
     username: ${BIZLAMA_DB_USER:sa}
     password: ${BIZLAMA_DB_PASSWORD:}
+
     hikari:
       maximum-pool-size: ${BIZLAMA_DB_POOL_SIZE:5}
       minimum-idle: 0
@@ -18,6 +19,7 @@ spring:
       max-file-size: 10MB
       max-request-size: 10MB
 
+
 bizlama:
   auth:
     mode: ${BIZLAMA_AUTH_MODE:local}
@@ -26,9 +28,8 @@ bizlama:
     owner-password: ${BIZLAMA_OWNER_PASSWORD:bizlama-demo}
     token-secret: ${BIZLAMA_AUTH_TOKEN_SECRET:dev-only-bizlama-token-secret-change-before-cloud}
     token-hours: ${BIZLAMA_AUTH_TOKEN_HOURS:8}
-
-  project-id: ${BIZLAMA_GCP_PROJECT_ID:bizlama}
-  identity-api-key: ${BIZLAMA_IDENTITY_API_KEY:}
+    project-id: ${BIZLAMA_GCP_PROJECT_ID:bizlama}
+    identity-api-key: ${BIZLAMA_IDENTITY_API_KEY:}
 
   automation:
     auto-apply-threshold: ${BIZLAMA_AUTO_APPLY_THRESHOLD:0.90}
@@ -49,14 +50,17 @@ bizlama:
     dataset: ${BIZLAMA_BIGQUERY_DATASET:bizlama_analytics}
     import-bucket: ${BIZLAMA_GCS_IMPORT_BUCKET:}
 
+
 server:
   port: 8080
+
 
 management:
   endpoints:
     web:
       exposure:
-        include: health, info
+        include: health,info
+
 
 ---
 spring:
@@ -67,6 +71,7 @@ spring:
   datasource:
     url: jdbc:h2:mem:bizlama;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
 
+
 ---
 spring:
   config:
@@ -76,4 +81,4 @@ spring:
   datasource:
     url: jdbc:postgresql:///${BIZLAMA_DB_NAME:bizlama}?cloudSqlInstance=${BIZLAMA_CLOUD_SQL_INSTANCE}&socketFactory=com.google.cloud.sql.postgres.SocketFactory&cloudSqlRefreshStrategy=lazy
     username: ${BIZLAMA_DB_USER:bizlama_app}
-    password: ${BIZLAMA_DB_PASSWORD:}
+    password: ${BIZLAMA_DB_PASSWORD}
