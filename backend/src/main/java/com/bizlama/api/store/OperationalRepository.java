@@ -1,5 +1,19 @@
 package com.bizlama.api.store;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.bizlama.api.data.bigquery.AnalyticsPublisher;
 import com.bizlama.api.domain.ActivityEvent;
 import com.bizlama.api.domain.Dish;
@@ -17,20 +31,6 @@ import com.bizlama.api.domain.StockLot;
 import com.bizlama.api.domain.StockMovement;
 import com.bizlama.api.experiment.ExperimentResponse;
 import com.bizlama.api.experiment.ExperimentStatus;
-import java.math.BigDecimal;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-
-import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public class OperationalRepository {
@@ -56,7 +56,7 @@ public class OperationalRepository {
                         FROM ingredients
                         ORDER BY name
                         """)
-                .query(this::ingredient)
+                .query((rs, row) -> ingredient(rs,row))
                 .list();
     }
 
@@ -67,7 +67,7 @@ public class OperationalRepository {
                         WHERE id = :id
                         """)
                 .param("id", id)
-                .query(this::ingredient)
+                .query((rs, row) -> ingredient(rs,row))
                 .optional();
     }
 
@@ -166,7 +166,7 @@ public class OperationalRepository {
                         WHERE d.active = TRUE
                         ORDER BY COALESCE(c.name, 'Other'), d.name
                         """)
-                .query(this::dish)
+                .query((rs, row) -> dish(rs, row))
                 .list();
     }
 
@@ -185,7 +185,7 @@ public class OperationalRepository {
                         WHERE d.id = :id
                         """)
                 .param("id", id)
-                .query(this::dish)
+                .query((rs, row) -> dish(rs, row))
                 .optional();
     }
 
@@ -1430,8 +1430,10 @@ public class OperationalRepository {
                                e.theme,
                                e.theme_count,
                                e.feedback_count,
+                               e.metric_name,
                                e.current_value,
                                e.proposed_value,
+                               e.unit,
                                e.test_duration_days,
                                e.status
                         FROM recipe_experiments e
@@ -1446,9 +1448,11 @@ public class OperationalRepository {
                                 rs.getString(2),
                                 rs.getInt(3),
                                 rs.getInt(4),
-                                rs.getInt(5),
-                                rs.getInt(6),
-                                rs.getInt(7),
+                                rs.getString(5),
+                                rs.getBigDecimal(6),
+                                rs.getBigDecimal(7),
+                                rs.getString(8),
+                                rs.getInt(9),
                                 ExperimentStatus.valueOf(
                                         rs.getString(8))))
                 .optional()

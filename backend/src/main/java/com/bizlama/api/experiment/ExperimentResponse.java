@@ -12,6 +12,5 @@ public record ExperimentResponse(
     BigDecimal proposedValue,
     String unit,
     int testDurationDays,
-    ExperimentStatus status
-) {
+    ExperimentStatus status) {
 }

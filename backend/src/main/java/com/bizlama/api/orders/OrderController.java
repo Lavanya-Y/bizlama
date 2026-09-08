@@ -1,15 +1,5 @@
 package com.bizlama.api.orders;
 
-import com.bizlama.api.domain.Dish;
-import com.bizlama.api.domain.Order;
-import com.bizlama.api.domain.Order.OrderItem;
-import com.bizlama.api.store.OperationalRepository;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
-
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -26,6 +16,20 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+
+import com.bizlama.api.common.PageResponse;
+import com.bizlama.api.domain.Dish;
+import com.bizlama.api.domain.Order;
+import com.bizlama.api.domain.Order.OrderItem;
+import com.bizlama.api.domain.OrderListItem;
+import com.bizlama.api.domain.OrderSummary;
+import com.bizlama.api.store.OperationalRepository;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -95,14 +99,12 @@ public class OrderController {
                             .orElseThrow(() ->
                                     new ResponseStatusException(
                                             HttpStatus.NOT_FOUND,
-                                            "Dish not found."
-                                    ));
+                                            "Dish not found: "+ item.dishId()));  
 
                     return new OrderItem(
                             dish.id(),
-                            dish.name(),
-                            dish.price(),
-                            item.quantity()
+                            item.quantity(),
+                            dish.price()
                     );
                 })
                 .toList();

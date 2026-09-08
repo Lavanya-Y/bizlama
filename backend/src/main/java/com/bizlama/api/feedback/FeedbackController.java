@@ -1,10 +1,5 @@
 package com.bizlama.api.feedback;
 
-import com.bizlama.api.domain.Feedback;
-import com.bizlama.api.store.OperationalRepository;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-
 import java.util.List;
 import java.util.UUID;
 
@@ -18,6 +13,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.bizlama.api.domain.Feedback;
+import com.bizlama.api.store.OperationalRepository;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 
 @RestController
 @RequestMapping("/api/feedback")
@@ -49,13 +50,11 @@ public class FeedbackController {
                 request.recipeId(),
                 request.text(),
                 request.rating(),
-                request.source(),
-                java.time.LocalDate.now()
+                java.time.LocalDate.now(),
+                request.source()
         );
 
-        store.addFeedback(feedback);
-
-        return feedback;
+        return store.saveFeedback(feedback);
     }
 
     @DeleteMapping("/{id}")
