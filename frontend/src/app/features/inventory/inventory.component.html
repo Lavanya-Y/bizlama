@@ -161,7 +161,7 @@
                 </button>
 
                 <span>
-                    Page {{ data.page + 1 }} of {{ data.totalPages }}
+                    Page {{ data.totalPages ? data.page + 1 : 0 }} of {{ data.totalPages }}
                 </span>
 
                 <button class="secondary-action" type="button" (click)="nextPage()"

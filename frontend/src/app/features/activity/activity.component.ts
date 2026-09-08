@@ -64,7 +64,7 @@ export class ActivityComponent implements OnInit {
                         `${response.events.length} ${response.events.length === 1 ? 'update' : 'updates'
                         } saved automatically. ${response.events
                             .map((event) => event.summary)
-                            .join(' ')}`
+                            .join(' . ')}`
                     );
                     this.statement.set('');
                     this.loadRecentEvents();

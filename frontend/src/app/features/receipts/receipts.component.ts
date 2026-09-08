@@ -36,7 +36,7 @@ export class ReceiptsComponent implements OnInit {
         }
 
         this.uploading.set(true);
-        this.message.set('Uploading securely and preparing the review.');
+        this.message.set('Uploading securely and preparing the review...');
 
         this.api.upload(file).subscribe({
             next: (receipt) => {

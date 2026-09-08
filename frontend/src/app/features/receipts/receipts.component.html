@@ -21,8 +21,8 @@
                     </p>
                 </div>
 
-                <label class="file-action" data-tooltip="Upload a JPG, PNG or PDF up to 18 MB">
-                    <input type="file" accept="image/jpeg,image/png,application/pdf" (change)="chooseFile($event)"
+                <label class="file-action" data-tooltip="Upload a JPG, PNG or PDF up to 10 MB">
+                    <input type="file" accept="image/*,.pdf" (change)="chooseFile($event)"
                         [disabled]="uploading()">
                     <span>
                         {{ uploading() ? 'Processing...' : 'Choose receipt' }}
@@ -147,7 +147,7 @@
                 </div>
 
                 <button class="icon-button" type="button" aria-label="Remove line" (click)="removeLine(index)"
-                    data-tooltip="Remove this receipt line"></button>
+                    data-tooltip="Remove this receipt line">x</button>
             </div>
             }
 

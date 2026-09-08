@@ -131,7 +131,7 @@
 
                         <button class="icon-button" type="button" (click)="removeNewDishIngredient(index)"
                             [disabled]="newDishIngredients().length <= 1" aria-label="Remove ingredient"
-                            data-tooltip="Remove this ingredient"></button>
+                            data-tooltip="Remove this ingredient">x</button>
                     </div>
                     } @empty {
                     <p class="empty-state">
@@ -178,7 +178,7 @@
 
                         <button class="icon-button" type="button" (click)="removeNewDishStep(index)"
                             [disabled]="newDishSteps().length <= 1" aria-label="Remove step"
-                            data-tooltip="Remove this preparation step"></button>
+                            data-tooltip="Remove this preparation step">x</button>
                     </div>
                     }
                 </div>
@@ -328,7 +328,7 @@
 
                         <button class="icon-button" type="button" (click)="removeIngredient(index)"
                             [disabled]="recipe.ingredients.length <= 1" aria-label="Remove ingredient"
-                            data-tooltip="Remove this ingredient"></button>
+                            data-tooltip="Remove this ingredient">x</button>
                     </div>
                     } @else {
                     <div class="recipe-read-row">
@@ -379,7 +379,7 @@
 
                         <button class="icon-button" type="button" (click)="removeInstruction(index)"
                             [disabled]="recipe.instructions.length <= 1" aria-label="Remove step"
-                            data-tooltip="Remove this preparation step"></button>
+                            data-tooltip="Remove this preparation step">x</button>
                         } @else {
                         <p>{{ step }}</p>
                         }
@@ -402,7 +402,7 @@
                 Save for owner review
             </button>
         </footer>
-
+        } @else {
         <footer class="recipe-action-bar approval-bar">
             <p class="approval-note">
                 <strong>Owner decision required.</strong>

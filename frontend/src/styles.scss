@@ -5,8 +5,8 @@
     --canvas: #f4f6f2;
     --line: #dfe5df;
     --brand: #174b43;
-    --brand-dark: #103635;
-    --brand-soft: #e8f1ed;
+    --brand-dark: #103b35;
+    --brand-soft: #e8f0ec;
     --accent: #d8e8b5;
     --warning: #b87914;
     --warning-soft: #fff7e5;
@@ -179,7 +179,7 @@ a {
 .sidebar-toggle {
     align-items: center;
     background: #fff;
-    border: 1px solid #d7eedb;
+    border: 1px solid #d7e0db;
     border-radius: 50%;
     box-shadow: 0 4px 12px rgba(16, 59, 53, 0.16);
     color: var(--brand);
@@ -1004,7 +1004,7 @@ a {
 }
 
 .menu-categories button:hover {
-    background: #eaf1ec;
+    background: #eaf0ec;
 }
 
 .menu-categories button.active {
@@ -1080,7 +1080,7 @@ a {
     max-height: 510px;
     overflow: auto;
     padding: 2px 5px 8px 1px;
-    scrollbar-color: #bdcacb transparent;
+    scrollbar-color: #bdcac4 transparent;
 }
 
 .menu-item-card {
@@ -1097,7 +1097,7 @@ a {
 }
 
 .menu-item-card:hover {
-    border-color: #9fa5a5;
+    border-color: #8fafa5;
     box-shadow: 0 8px 20px rgba(24, 61, 51, 0.08);
     transform: translateY(-1px);
 }
@@ -1243,7 +1243,7 @@ a {
 }
 
 .quantity-control button {
-    background: #e8f1ed;
+    background: #e8f0ec;
     border: 0;
     border-radius: 7px;
     color: var(--brand);
@@ -1548,7 +1548,7 @@ a {
     background: #f3f6f3;
     border: 1px solid #d9e1dc;
     border-radius: 999px;
-    color: #48544f;
+    color: #405d54;
     cursor: pointer;
     font-size: 11px;
     padding: 7px 10px;
@@ -1556,7 +1556,7 @@ a {
 
 .review-card {
     align-items: center;
-    background: #fef6f3;
+    background: #f0f6f3;
     border: 1px solid #c8ddd3;
     border-radius: 14px;
     display: flex;
@@ -1651,7 +1651,7 @@ a {
 }
 
 .confidence-rule span {
-    color: #c5dbd2;
+    color: #c5d8d2;
     font-size: 12px;
 }
 
@@ -1815,7 +1815,7 @@ a {
 .status-pill {
     background: var(--warning-soft);
     border-radius: 999px;
-    color: #946000;
+    color: #94600e;
     font-size: 9px;
     font-weight: 850;
     letter-spacing: 0.05em;
@@ -2081,7 +2081,7 @@ a {
 }
 
 .recipe-list-row.selected {
-    background: #fef6f3;
+    background: #f0f6f3;
     border-color: #e5cfc7;
 }
 

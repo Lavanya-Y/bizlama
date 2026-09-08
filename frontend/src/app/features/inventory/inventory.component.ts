@@ -26,7 +26,7 @@ export class InventoryComponent implements OnInit {
     protected readonly status = signal('all');
     protected readonly page = signal(0);
     protected readonly loading = signal(false);
-    protected readonly ingredient = signal('');
+    protected readonly ingredient = signal('Paneer');
     protected readonly quantity = signal(1);
     protected readonly expiry = signal('');
     protected readonly message = signal('');

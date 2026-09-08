@@ -45,7 +45,7 @@
 
         <article>
             <span>Today's sales</span>
-            <strong>{{ totals.revenueToday | number: '1.0-2' }}</strong>
+            <strong>{{ totals.revenueToday | number: '1.0-0' }}</strong>
         </article>
     </section>
     }
@@ -147,7 +147,7 @@
                 <h2>{{ order.id }}</h2>
             </div>
 
-            <button class="icon-button" type="button" aria-label="Close order details" (click)="closeOrder()"></button>
+            <button class="icon-button" type="button" aria-label="Close order details" (click)="closeOrder()">x</button>
         </div>
 
         <div class="drawer-meta">
@@ -163,7 +163,7 @@
                 <span>
                     <strong>{{ dishName(item.dishId) }}</strong>
                     <small>
-                        {{ item.quantity }} × {{ item.unitPrice | number: '1.0-2' }}
+                        {{ item.quantity }} × Rs. {{ item.unitPrice | number: '1.0-2' }}
                     </small>
                 </span>
 
