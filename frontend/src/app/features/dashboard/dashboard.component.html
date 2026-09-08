@@ -1,0 +1,116 @@
+<main class="dashboard-screen">
+    @if (error(); as message) {
+    <section class="message error-message">
+        <strong>Kitchen data unavailable</strong>
+        <p>{{ message }}</p>
+    </section>
+    }
+
+    @if (dashboard(); as data) {
+    <header class="dashboard-header">
+        <div>
+            <p class="eyebrow">{{ today }}</p>
+            <h1>{{ greeting }}, {{ displayName }}.</h1>
+            <p>Here are the few things that need your attention today.</p>
+        </div>
+
+        <a class="primary-action link-action" routerLink="/activity">
+            Record an update
+        </a>
+    </header>
+
+    <section class="overview-metrics" aria-label="Kitchen summary">
+        @for (metric of data.metrics; track metric.label) {
+        <a class="overview-metric" [class.warning]="metric.status === 'warning'"
+            [routerLink]="metricRoute(metric.label)">
+            <span>{{ metric.label }}</span>
+            <strong>{{ metric.value }}</strong>
+            <small>{{ metric.detail }}</small>
+            <em>View details →</em>
+        </a>
+        }
+    </section>
+
+    <section class="dashboard-grid">
+        <article class="dashboard-card attention-card">
+            <div class="card-heading">
+                <div>
+                    <p class="eyebrow">Priority</p>
+                    <h2>Needs attention</h2>
+                </div>
+                <a routerLink="/inventory">Open inventory</a>
+            </div>
+
+            <div class="attention-list">
+                @for (item of attentionItems(data.stockItems); track item.ingredient) {
+                <div class="attention-row">
+                    <span class="attention-indicator" [class.critical]="item.status === 'critical'"></span>
+
+                    <div>
+                        <strong>{{ item.ingredient }}</strong>
+                        <small>{{ item.quantity }}</small>
+                    </div>
+
+                    <span class="attention-expiry" [class.critical]="item.status === 'critical'">
+                        {{ item.expiryLabel }}
+                    </span>
+                </div>
+                } @empty {
+                <div class="empty-state">
+                    <strong>Everything looks good</strong>
+                    <span>No stock needs immediate attention.</span>
+                </div>
+                }
+            </div>
+        </article>
+
+        <article class="dashboard-card quick-actions-card">
+            <div class="card-heading">
+                <div>
+                    <p class="eyebrow">Shortcuts</p>
+                    <h2>Quick actions</h2>
+                </div>
+            </div>
+
+            <div class="quick-action-list">
+                @for (action of quickActions; track action.label) {
+                <a [routerLink]="action.route">
+                    <span class="quick-action-icon">{{ action.icon }}</span>
+                    <span>
+                        <strong>{{ action.label }}</strong>
+                        <small>{{ action.detail }}</small>
+                    </span>
+                    <b></b>
+                </a>
+                }
+            </div>
+        </article>
+
+        <article class="dashboard-card recent-card">
+            <div class="card-heading">
+                <div>
+                    <p class="eyebrow">Audit trail</p>
+                    <h2>Recent activity</h2>
+                </div>
+                <a routerLink="/activity">Record new</a>
+            </div>
+
+            <div class="recent-list">
+                @for (event of data.recentEvents; track event.description) {
+                <div class="recent-row">
+                    <span class="event-badge">{{ event.type }}</span>
+                    <div>
+                        <strong>{{ event.description }}</strong>
+                        <small>{{ event.occurredAt }}</small>
+                    </div>
+                </div>
+                }
+            </div>
+        </article>
+    </section>
+    } @else if (!error()) {
+    <section class="message">
+        <p>Loading your kitchen overview</p>
+    </section>
+    }
+</main>
