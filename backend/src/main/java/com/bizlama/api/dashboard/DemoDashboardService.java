@@ -218,7 +218,7 @@ public class DemoDashboardService {
 
         totals.forEach((id, amount) -> {
 
-            if (List.of(
+            if (amount <=1200 &&List.of(
                     "paneer",
                     "bread",
                     "milk",

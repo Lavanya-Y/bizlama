@@ -104,7 +104,7 @@ public class SecurityConfig {
                         : OAuth2TokenValidatorResult.failure(
                                 new OAuth2Error(
                                         "invalid_token",
-                                        "Token audience does not match this Bizlama project",
+                                        "Token audience does not match this BizlaMa project",
                                         null
                                 )
                         );

@@ -17,6 +17,6 @@ public record BigQueryProperties(
             );
         }
 
-        return projectId + "." + dataset + "." + tableName;
+        return "`" + projectId + "." + dataset + "." + tableName + "`";
     }
 }
