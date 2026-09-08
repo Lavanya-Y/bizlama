@@ -38,19 +38,19 @@ export class DashboardComponent implements OnInit {
             label: 'Take an order',
             detail: 'Create and queue a customer order',
             route: '/orders',
-            icon: '↗'
+            icon: '≡'
         },
         {
             label: 'Add stock',
             detail: 'Record a purchase or delivery',
             route: '/inventory',
-            icon: '+'
+            icon: '□'
         },
         {
             label: 'Record activity',
             detail: 'Update the kitchen with a simple sentence',
             route: '/activity',
-            icon: '↻'
+            icon: '+'
         },
         {
             label: 'Upload receipt',
