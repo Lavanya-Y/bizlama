@@ -1433,7 +1433,7 @@ public class OperationalRepository {
                                e.metric_name,
                                e.current_value,
                                e.proposed_value,
-                               e.unit,
+                               e.value_unit,
                                e.test_duration_days,
                                e.status
                         FROM recipe_experiments e
@@ -1454,7 +1454,7 @@ public class OperationalRepository {
                                 rs.getString(8),
                                 rs.getInt(9),
                                 ExperimentStatus.valueOf(
-                                        rs.getString(8))))
+                                        rs.getString(10))))
                 .optional()
                 .orElseThrow(() ->
                         new IllegalArgumentException("Experiment not found"));
