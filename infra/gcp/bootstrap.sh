@@ -8,7 +8,7 @@ REGION="${REGION:-asia-south1}"
 RUNTIME_SERVICE_ACCOUNT="bizlama-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
 PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 DATA_BUCKET="bizlama-data-${PROJECT_NUMBER}"
 RECEIPTS_BUCKET="bizlama-receipts-${PROJECT_NUMBER}"
@@ -117,8 +117,7 @@ gcloud storage buckets add-iam-policy-binding "gs://${DATA_BUCKET}" \
   --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" \
   --role=roles/storage.objectViewer >/dev/null
 
-bq --location="${REGION}" mk-dataset \
-  "${PROJECT_ID}:bizlama_analytics" 2>/dev/null || true
+bq --location="${REGION}" mk --dataset "${PROJECT_ID}:bizlama_analytics" 2>/dev/null || true
 
 sed "s/PROJECT_ID_PLACEHOLDER/${PROJECT_ID}/g" \
   "${SCRIPT_DIR}/bigquery-schema.sql" | \
@@ -130,7 +129,7 @@ echo "Bootstrap complete. Runtime service account: ${RUNTIME_SERVICE_ACCOUNT}"
 echo "Receipt bucket: ${RECEIPTS_BUCKET}"
 echo "BigQuery schema applied from: ${SCRIPT_DIR}/bigquery-schema.sql"
 
-if [ "${AUTH_PASSWORD_CREATED}" = "true" ]; then
+if [[ "${AUTH_PASSWORD_CREATED}" == "true" ]]; then
   echo "BizLaMa owner email: ${BIZLAMA_OWNER_EMAIL:-owner@bizlama.app}"
   echo "One-time generated owner password: ${OWNER_PASSWORD}"
   echo "Save this password now. It is stored in Secret Manager and will not be printed again."

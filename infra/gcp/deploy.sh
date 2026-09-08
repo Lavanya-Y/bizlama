@@ -22,7 +22,7 @@ latest_enabled_secret_version() {
   gcloud secrets versions list "$1" \
     --project="${PROJECT_ID}" \
     --filter="state=ENABLED" \
-    --sort-by="createTime" \
+    --sort-by="~createTime" \
     --limit=1 \
     --format="value(name)"
 }
@@ -35,8 +35,8 @@ AUTH_MODE="${BIZLAMA_AUTH_MODE:-local}"
 
 AUTH_ENV="BIZLAMA_AUTH_MODE=${AUTH_MODE}"
 
-if [ "${AUTH_MODE}" = "identity-platform" ]; then
-  if [ -z "${BIZLAMA_IDENTITY_API_KEY:-}" ]; then
+if [[ "${AUTH_MODE}" == "identity-platform" ]]; then
+  if [[ -z "${BIZLAMA_IDENTITY_API_KEY:-}" ]]; then
     echo "BIZLAMA_IDENTITY_API_KEY is required when BIZLAMA_AUTH_MODE=identity-platform" >&2
     exit 1
   fi

@@ -16,11 +16,11 @@ CREATE TABLE IF NOT EXISTS `PROJECT_ID_PLACEHOLDER.bizlama_analytics.order_facts
   order_id STRING NOT NULL,
   kitchen_id STRING NOT NULL,
   location_id STRING,
-  status STRING NOT NULL,
   channel STRING,
+  status STRING NOT NULL,
+  item_count INT64,
   gross_total NUMERIC,
   created_at TIMESTAMP NOT NULL,
-  item_count INT64,
   updated_at TIMESTAMP
 )
 PARTITION BY DATE(created_at)

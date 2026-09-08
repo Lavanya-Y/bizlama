@@ -13,7 +13,7 @@ The Angular pages call the Spring Boot API. They never download a bucket and tre
 
 ## Cloud SQL schema
 
-Flyway applies the schema automatically when Cloud Run starts. Migrations `V4_production_scale_schema.sql` and `V5_shelf_life_rules.sql` add:
+Flyway applies the schema automatically when Cloud Run starts. Migrations `V4__production_scale_schema.sql` and `V5__shelf_life_rules.sql` add:
 
 - Kitchens, users, roles and locations for future multi-location use.
 - Suppliers, categories, unit conversions, reorder points, batch codes and unit cost.

@@ -40,7 +40,7 @@ npm ci
 npm start -- --host 127.0.0.1
 ```
 
-Open `http://127.0.0.1:4200/` and sign in with:
+Open `http://127.0.0.1:4200` and sign in with:
 
 - Email: `owner@bizlama.local`
 - Password: `bizlama-demo`

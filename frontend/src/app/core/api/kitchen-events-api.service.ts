@@ -20,7 +20,7 @@ export class KitchenEventsApiService {
     confirm(events: ParsedKitchenEvent[]) {
         return this.http.post<void>(
             `${this.baseUrl}/confirm`,
-            events
+            { events }
         );
     }
 }
