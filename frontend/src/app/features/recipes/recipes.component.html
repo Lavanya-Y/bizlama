@@ -434,7 +434,7 @@
         <div class="prep-grid">
             @for (item of prep(); track item.dish) {
             <article class="prep-item">
-                <strong>{{ item.quantity }} {{ item.dish }}</strong>
+                <strong>{{ item.quantity }} x {{ item.dish }}</strong>
                 <small>{{ item.ingredients }}</small>
             </article>
             }
