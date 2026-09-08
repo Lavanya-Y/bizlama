@@ -29,7 +29,7 @@ CREATE TABLE kitchen_locations (
   id VARCHAR(100) PRIMARY KEY,
   kitchen_id VARCHAR(80) NOT NULL REFERENCES kitchens(id),
   name VARCHAR(160) NOT NULL,
-  location_type VARCHAR(48) NOT NULL,
+  location_type VARCHAR(40) NOT NULL,
   active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (kitchen_id, name)
@@ -158,7 +158,7 @@ ALTER TABLE customer_orders
   FOREIGN KEY (location_id) REFERENCES kitchen_locations(id);
 
 ALTER TABLE customer_orders
-  ADD COLUMN channel VARCHAR(48) DEFAULT 'COUNTER' NOT NULL;
+  ADD COLUMN channel VARCHAR(40) DEFAULT 'COUNTER' NOT NULL;
 
 ALTER TABLE customer_orders
   ADD COLUMN customer_name VARCHAR(180);

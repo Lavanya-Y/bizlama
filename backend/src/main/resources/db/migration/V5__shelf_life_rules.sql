@@ -2,7 +2,7 @@ CREATE TABLE shelf_life_rules (
   id VARCHAR(100) PRIMARY KEY,
   kitchen_id VARCHAR(80) NOT NULL REFERENCES kitchens(id),
   ingredient_id VARCHAR(80) NOT NULL REFERENCES ingredients(id),
-  storage_method VARCHAR(48) NOT NULL,
+  storage_method VARCHAR(40) NOT NULL,
   min_days INTEGER NOT NULL,
   max_days INTEGER NOT NULL,
   priority INTEGER NOT NULL DEFAULT 100,

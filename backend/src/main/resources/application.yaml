@@ -41,9 +41,8 @@ bizlama:
     storage-mode: ${BIZLAMA_RECEIPT_STORAGE:local}
     local-directory: ${BIZLAMA_RECEIPT_DIRECTORY:./.data/receipts}
     bucket: ${BIZLAMA_RECEIPTS_BUCKET:}
-
-  ai-enabled: ${BIZLAMA_VERTEX_AI_ENABLED:false}
-  model: ${BIZLAMA_VERTEX_MODEL:gemini-2.5-flash}
+    ai-enabled: ${BIZLAMA_VERTEX_AI_ENABLED:false}
+    model: ${BIZLAMA_VERTEX_MODEL:gemini-2.5-flash}
 
   bigquery:
     enabled: ${BIZLAMA_BIGQUERY_ENABLED:false}

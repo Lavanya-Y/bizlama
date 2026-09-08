@@ -72,7 +72,7 @@ CREATE TABLE stock_movements (
   id VARCHAR(100) PRIMARY KEY,
   stock_lot_id VARCHAR(100),
   ingredient_id VARCHAR(80) NOT NULL REFERENCES ingredients(id),
-  movement_type VARCHAR(48) NOT NULL,
+  movement_type VARCHAR(40) NOT NULL,
   quantity_change DECIMAL(14,3) NOT NULL,
   unit VARCHAR(24) NOT NULL,
   reference_type VARCHAR(50) NOT NULL,
@@ -139,7 +139,7 @@ CREATE TABLE ai_actions (
 
 CREATE TABLE receipt_imports (
   id VARCHAR(100) PRIMARY KEY,
-  original_filename VARCHAR(380) NOT NULL,
+  original_filename VARCHAR(300) NOT NULL,
   object_uri VARCHAR(1000) NOT NULL,
   status VARCHAR(40) NOT NULL,
   merchant VARCHAR(300),

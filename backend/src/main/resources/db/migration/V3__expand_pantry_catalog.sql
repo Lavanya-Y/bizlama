@@ -25,7 +25,7 @@ INSERT INTO ingredient_aliases (
   ('namak', 'salt', 'Namak', NULL, 0.9900, 'curated'),
   ('egg', 'eggs', 'Egg', NULL, 0.9900, 'curated'),
   ('eggs', 'eggs', 'Eggs', NULL, 1.0000, 'catalog'),
-  ('anda', 'eggs', 'Anda', NULL, 0.9900, 'curated'),
+  ('anda', 'eggs', 'Anda', NULL, 0.9800, 'curated'),
   ('cooking oil', 'cooking-oil', 'Cooking oil', NULL, 1.0000, 'catalog'),
   ('oil', 'cooking-oil', 'Oil', NULL, 0.9600, 'curated'),
   ('ginger', 'ginger', 'Ginger', NULL, 1.0000, 'catalog'),
