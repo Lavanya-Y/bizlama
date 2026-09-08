@@ -1,0 +1,79 @@
+spring:
+  application:
+    name: bizlama-api
+
+  datasource:
+    url: ${BIZLAMA_DB_URL:jdbc:h2:file:./.data/bizlama;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH}
+    username: ${BIZLAMA_DB_USER:sa}
+    password: ${BIZLAMA_DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${BIZLAMA_DB_POOL_SIZE:5}
+      minimum-idle: 0
+
+  flyway:
+    enabled: true
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+bizlama:
+  auth:
+    mode: ${BIZLAMA_AUTH_MODE:local}
+    owner-email: ${BIZLAMA_OWNER_EMAIL:owner@bizlama.local}
+    owner-name: ${BIZLAMA_OWNER_NAME:Madhu}
+    owner-password: ${BIZLAMA_OWNER_PASSWORD:bizlama-demo}
+    token-secret: ${BIZLAMA_AUTH_TOKEN_SECRET:dev-only-bizlama-token-secret-change-before-cloud}
+    token-hours: ${BIZLAMA_AUTH_TOKEN_HOURS:8}
+
+  project-id: ${BIZLAMA_GCP_PROJECT_ID:bizlama}
+  identity-api-key: ${BIZLAMA_IDENTITY_API_KEY:}
+
+  automation:
+    auto-apply-threshold: ${BIZLAMA_AUTO_APPLY_THRESHOLD:0.90}
+
+  shelf-life:
+    mode: ${BIZLAMA_SHELF_LIFE_MODE:database}
+
+  receipts:
+    storage-mode: ${BIZLAMA_RECEIPT_STORAGE:local}
+    local-directory: ${BIZLAMA_RECEIPT_DIRECTORY:./.data/receipts}
+    bucket: ${BIZLAMA_RECEIPTS_BUCKET:}
+    ai-enabled: ${BIZLAMA_VERTEX_AI_ENABLED:false}
+    model: ${BIZLAMA_VERTEX_MODEL:gemini-2.5-flash}
+
+  bigquery:
+    enabled: ${BIZLAMA_BIGQUERY_ENABLED:false}
+    project-id: ${BIZLAMA_GCP_PROJECT_ID:}
+    dataset: ${BIZLAMA_BIGQUERY_DATASET:bizlama_analytics}
+    import-bucket: ${BIZLAMA_GCS_IMPORT_BUCKET:}
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+
+---
+spring:
+  config:
+    activate:
+      on-profile: memory
+
+  datasource:
+    url: jdbc:h2:mem:bizlama;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+
+---
+spring:
+  config:
+    activate:
+      on-profile: cloud
+
+  datasource:
+    url: jdbc:postgresql:///${BIZLAMA_DB_NAME:bizlama}?cloudSqlInstance=${BIZLAMA_CLOUD_SQL_INSTANCE}&socketFactory=com.google.cloud.sql.postgres.SocketFactory&cloudSqlRefreshStrategy=lazy
+    username: ${BIZLAMA_DB_USER:bizlama_app}
+    password: ${BIZLAMA_DB_PASSWORD:}
