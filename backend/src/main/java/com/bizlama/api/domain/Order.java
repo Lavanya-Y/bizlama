@@ -8,7 +8,7 @@ public record Order (
     String id,
     List<OrderItem> items,
     BigDecimal total,
-    String status,
+    Status status,
     Instant createdAt
 ) {
     public enum Status {

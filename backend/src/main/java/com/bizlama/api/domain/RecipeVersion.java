@@ -7,7 +7,7 @@ public record RecipeVersion (
     String id,
     String dishId,
     int versionNumber,
-    List<RecipeVersionIngredient> ingredients,
+    List<RecipeIngredient> ingredients,
     List<String> instructions,
     String changeReason,
     Instant createdAt,

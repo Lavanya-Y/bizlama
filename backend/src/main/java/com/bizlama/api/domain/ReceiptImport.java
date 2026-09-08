@@ -2,16 +2,16 @@ package com.bizlama.api.domain;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 
 public record ReceiptImport (
     String id,
-    String OriginalFileName,
+    String OriginalFilename,
     String objectUri,
     Status status,
     String merchant,
-    LocalDateTime purchaseDate,
+    LocalDate purchaseDate,
     BigDecimal total,
     Instant createdAt,
    List<ReceiptItem> items ) {

@@ -8,7 +8,7 @@ public record InventoryLot (
     String ingredientName,
     double quantityRemaining,
     String unit,
-    LocalDate purchaseDate,
+    LocalDate purchasedAt,
     LocalDate expiresAt,
     String source,
     String status

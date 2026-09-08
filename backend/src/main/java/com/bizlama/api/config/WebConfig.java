@@ -13,7 +13,7 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addMapping("/api/**")
                 .allowedOriginPatterns(
                         "http://localhost:*",
-                        "http://127.0.0.1:*",
+                        "http://127.0.0.1:*"
                 )
                 .allowedMethods(
                         "GET",
