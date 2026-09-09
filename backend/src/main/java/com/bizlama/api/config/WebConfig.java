@@ -13,14 +13,16 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addMapping("/api/**")
                 .allowedOriginPatterns(
                         "http://localhost:*",
-                        "http://127.0.0.1:*"
+                        "http://127.0.0.1:*",
+                        "https://bizlama-244754759280.asia-south1.run.app"
                 )
                 .allowedMethods(
                         "GET",
                         "POST",
                         "PUT",
                         "PATCH",
-                        "DELETE"
+                        "DELETE",
+                        "OPTIONS"
                 )
                 .allowedHeaders("*");
     }
