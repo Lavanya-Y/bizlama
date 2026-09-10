@@ -4,11 +4,15 @@ import { FormsModule } from '@angular/forms';
 import { DashboardApiService } from '../../core/api/dashboard-api.service';
 import { Dish, OrdersApiService } from '../../core/api/orders-api.service';
 import {
+    LegacyProvenanceReviewQueue,
     MenuCategory,
+    OrderRecipePinReview,
     RecipeIngredient,
+    RecipeYieldReview,
     RecipeVersion,
     RecipesApiService
 } from '../../core/api/recipes-api.service';
+import { AuthService } from '../../core/auth/auth.service';
 import { PrepRequirement } from '../../core/models/dashboard';
 import { Ingredient, StockApiService } from '../../core/api/stock-api.service';
 
@@ -22,6 +26,7 @@ export class RecipesComponent implements OnInit {
     private readonly recipesApi = inject(RecipesApiService);
     private readonly ordersApi = inject(OrdersApiService);
     private readonly stockApi = inject(StockApiService);
+    private readonly auth = inject(AuthService);
 
     protected readonly prep = signal<PrepRequirement[]>([]);
     protected readonly dishes = signal<Dish[]>([]);
@@ -34,10 +39,19 @@ export class RecipesComponent implements OnInit {
     protected readonly creating = signal(false);
     protected readonly reason = signal('Respond to recurring customer feedback');
 
+    protected readonly provenanceReviews = signal<LegacyProvenanceReviewQueue>({
+        recipeYields: [],
+        orderRecipePins: []
+    });
+    protected readonly provenanceReason = signal('Verified against retained source records');
+    protected readonly reviewingProvenance = signal<string | null>(null);
+
     protected readonly newDishName = signal('');
     protected readonly newDishPrice = signal<number | null>(null);
     protected readonly newDishCategory = signal('');
     protected readonly newDishPrepMinutes = signal<number | null>(null);
+    protected readonly newDishYieldQuantity = signal<number | null>(1);
+    protected readonly newDishYieldUnit = signal('each');
     protected readonly newDishIngredients = signal<RecipeIngredient[]>([]);
     protected readonly newDishSteps = signal<string[]>([]);
     protected readonly savingDish = signal(false);
@@ -54,9 +68,19 @@ export class RecipesComponent implements OnInit {
             : this.recipes();
     });
 
+    protected readonly provenanceReviewCount = computed(() =>
+        this.provenanceReviews().recipeYields.length
+            + this.provenanceReviews().orderRecipePins.length
+    );
+
+    protected readonly canReviewProvenance = computed(() =>
+        ['OWNER', 'ADMIN'].includes(this.auth.user()?.role ?? '')
+    );
+
     protected readonly canCreateDish = computed(() => {
         const price = this.newDishPrice();
         const prepMinutes = this.newDishPrepMinutes();
+        const yieldQuantity = this.newDishYieldQuantity();
         const ingredients = this.newDishIngredients();
         const steps = this.newDishSteps();
 
@@ -67,6 +91,9 @@ export class RecipesComponent implements OnInit {
             this.newDishCategory() &&
             prepMinutes &&
             prepMinutes > 0 &&
+            yieldQuantity &&
+            yieldQuantity > 0 &&
+            this.newDishYieldUnit().trim() &&
             ingredients.length &&
             ingredients.every(
                 (item) =>
@@ -108,6 +135,8 @@ export class RecipesComponent implements OnInit {
         this.newDishPrice.set(null);
         this.newDishCategory.set(this.categories()[0]?.id ?? '');
         this.newDishPrepMinutes.set(null);
+        this.newDishYieldQuantity.set(1);
+        this.newDishYieldUnit.set('each');
 
         this.newDishIngredients.set(
             ingredient
@@ -229,6 +258,8 @@ export class RecipesComponent implements OnInit {
                 price: this.newDishPrice()!,
                 categoryId: this.newDishCategory(),
                 preparationMinutes: this.newDishPrepMinutes()!,
+                yieldQuantity: this.newDishYieldQuantity()!,
+                yieldUnit: this.newDishYieldUnit().trim(),
                 ingredients: this.newDishIngredients(),
                 instructions: this.newDishSteps().map((step) => step.trim())
             })
@@ -261,6 +292,68 @@ export class RecipesComponent implements OnInit {
 
     protected ingredientName(id: string): string {
         return this.ingredients().find((value) => value.id === id)?.name ?? id;
+    }
+
+    protected confirmLegacyYield(review: RecipeYieldReview): void {
+        const reason = this.provenanceReason().trim();
+        const reviewKey = 'yield:' + review.recipeVersionId;
+
+        if (!this.canReviewProvenance() || !reason || this.reviewingProvenance()) {
+            return;
+        }
+
+        this.reviewingProvenance.set(reviewKey);
+        this.recipesApi.confirmLegacyYield(
+            review.recipeVersionId,
+            review.yieldQuantity,
+            review.yieldUnit,
+            reason
+        ).subscribe({
+            next: (result) => {
+                this.reviewingProvenance.set(null);
+                this.message.set(result.changed
+                    ? 'Legacy recipe yield confirmed. Its retained value is now trusted evidence.'
+                    : 'That recipe yield was already confirmed.');
+                this.reload(review.recipeVersionId);
+            },
+            error: (error) => {
+                this.reviewingProvenance.set(null);
+                this.message.set(
+                    error.error?.detail ?? 'Could not confirm this legacy recipe yield.'
+                );
+            }
+        });
+    }
+
+    protected confirmOrderRecipePin(review: OrderRecipePinReview): void {
+        const reason = this.provenanceReason().trim();
+        const reviewKey = 'order:' + review.orderId + ':' + review.lineNumber;
+
+        if (!this.canReviewProvenance() || !reason || this.reviewingProvenance()) {
+            return;
+        }
+
+        this.reviewingProvenance.set(reviewKey);
+        this.recipesApi.confirmOrderRecipePin(
+            review.orderId,
+            review.lineNumber,
+            review.provisionalRecipeVersionId,
+            reason
+        ).subscribe({
+            next: (result) => {
+                this.reviewingProvenance.set(null);
+                this.message.set(result.changed
+                    ? 'Legacy order recipe pin confirmed. Exact demand can now use this line.'
+                    : 'That order recipe pin was already confirmed.');
+                this.reload();
+            },
+            error: (error) => {
+                this.reviewingProvenance.set(null);
+                this.message.set(
+                    error.error?.detail ?? 'Could not confirm this legacy order recipe pin.'
+                );
+            }
+        });
     }
 
     protected propose(): void {
@@ -424,7 +517,29 @@ export class RecipesComponent implements OnInit {
         }
     }
 
+    protected updateYield(
+        field: 'quantity' | 'unit',
+        value: string | number
+    ): void {
+        const recipe = this.selected();
+        if (!recipe?.active) {
+            return;
+        }
+
+        this.selected.set({
+            ...recipe,
+            yieldQuantity: field === 'quantity'
+                ? Number(value)
+                : recipe.yieldQuantity,
+            yieldUnit: field === 'unit'
+                ? String(value)
+                : recipe.yieldUnit
+        });
+    }
+
     private reload(selectId?: string): void {
+        this.reloadProvenanceReviews();
+
         this.ordersApi.dishes().subscribe((values) => {
             this.dishes.set(values);
         });
@@ -440,6 +555,20 @@ export class RecipesComponent implements OnInit {
             this.selected.set(
                 selectedRecipe ? structuredClone(selectedRecipe) : null
             );
+        });
+    }
+
+    private reloadProvenanceReviews(): void {
+        this.recipesApi.provenanceReviews().subscribe({
+            next: (reviews) => {
+                this.provenanceReviews.set(reviews);
+            },
+            error: (error) => {
+                this.message.set(
+                    error.error?.detail
+                        ?? 'Could not load the legacy provenance review queue.'
+                );
+            }
         });
     }
 }

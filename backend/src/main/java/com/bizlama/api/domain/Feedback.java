@@ -10,5 +10,5 @@ public record Feedback (
     LocalDate occurredAt,
     String source
 ) {
-    
+
 }

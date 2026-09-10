@@ -25,6 +25,88 @@
     <p class="message" role="status">{{ message() }}</p>
     }
 
+    @if (provenanceReviewCount() > 0) {
+    <section class="screen-card provenance-review-card" aria-labelledby="provenance-review-title">
+        <div class="provenance-review-heading">
+            <div>
+                <p class="eyebrow">Owner evidence review</p>
+                <h2 id="provenance-review-title">Legacy records need confirmation</h2>
+            </div>
+            <span class="count-badge">{{ provenanceReviewCount() }}</span>
+        </div>
+
+        <p class="provenance-review-intro">
+            These retained records remain visible, but are excluded from exact demand, governed recommendations and
+            operational analytics until their provenance is confirmed. Confirmation attests the value shown; it never
+            rewrites accepted history.
+        </p>
+
+        <label class="provenance-reason">
+            Evidence note
+            <input type="text" [ngModel]="provenanceReason()"
+                (ngModelChange)="provenanceReason.set($event)"
+                [disabled]="!canReviewProvenance()"
+                placeholder="Describe the source checked before confirming">
+            <small>This note is retained in the immutable review audit.</small>
+        </label>
+
+        @if (!canReviewProvenance()) {
+        <p class="provenance-owner-note">An owner or administrator must complete these attestations.</p>
+        }
+
+        <div class="provenance-review-grid">
+            @if (provenanceReviews().orderRecipePins.length > 0) {
+            <section class="provenance-review-group">
+                <h3>Order recipe pins</h3>
+                @for (review of provenanceReviews().orderRecipePins; track review.orderId + ':' + review.lineNumber) {
+                <article class="provenance-review-row">
+                    <div>
+                        <strong>{{ review.dishName }} · order {{ review.orderId }} · line {{ review.lineNumber }}</strong>
+                        <small>
+                            Ordered {{ review.orderedQuantity }} · prepared {{ review.preparedQuantity }} ·
+                            {{ review.orderedAt | date:'medium' }}
+                        </small>
+                        <small>Provisional recipe: <code>{{ review.provisionalRecipeVersionId }}</code></small>
+                    </div>
+                    @if (canReviewProvenance()) {
+                    <button class="small-action" type="button" (click)="confirmOrderRecipePin(review)"
+                        [disabled]="!provenanceReason().trim() || reviewingProvenance() !== null">
+                        {{ reviewingProvenance() === 'order:' + review.orderId + ':' + review.lineNumber
+                        ? 'Confirming...' : 'Confirm exact pin' }}
+                    </button>
+                    }
+                </article>
+                }
+            </section>
+            }
+
+            @if (provenanceReviews().recipeYields.length > 0) {
+            <section class="provenance-review-group">
+                <h3>Recipe yields</h3>
+                @for (review of provenanceReviews().recipeYields; track review.recipeVersionId) {
+                <article class="provenance-review-row">
+                    <div>
+                        <strong>{{ review.dishName }}</strong>
+                        <small>
+                            Retained yield: {{ review.yieldQuantity }} {{ review.yieldUnit }} ·
+                            recipe <code>{{ review.recipeVersionId }}</code>
+                        </small>
+                    </div>
+                    @if (canReviewProvenance()) {
+                    <button class="small-action" type="button" (click)="confirmLegacyYield(review)"
+                        [disabled]="!provenanceReason().trim() || reviewingProvenance() !== null">
+                        {{ reviewingProvenance() === 'yield:' + review.recipeVersionId
+                        ? 'Confirming...' : 'Confirm retained yield' }}
+                    </button>
+                    }
+                </article>
+                }
+            </section>
+            }
+        </div>
+    </section>
+    }
+
     @if (creating()) {
     <section class="screen-card new-dish-card">
         <div class="new-dish-heading">
@@ -41,7 +123,7 @@
         <div class="new-dish-basics">
             <label>
                 Dish name
-                <input type="text" placeholder="For example: Palak paneer" [ngModel]="newDishName()"
+                <input type="text" placeholder="Enter the dish name" [ngModel]="newDishName()"
                     (ngModelChange)="newDishName.set($event)">
             </label>
 
@@ -67,13 +149,27 @@
                 <input type="number" min="1" step="1" placeholder="25" [ngModel]="newDishPrepMinutes()"
                     (ngModelChange)="newDishPrepMinutes.set($event)">
             </label>
+
+            <label>
+                Recipe yield
+                <input type="number" min="1" step="1" [ngModel]="newDishYieldQuantity()"
+                    (ngModelChange)="newDishYieldQuantity.set($event)">
+            </label>
+
+            <label>
+                Yield unit
+                <input type="text" value="each" [ngModel]="newDishYieldUnit()"
+                    (ngModelChange)="newDishYieldUnit.set($event)"
+                    aria-describedby="new-yield-help">
+                <small id="new-yield-help">Use count or each; ingredient amounts are for this yield.</small>
+            </label>
         </div>
 
         <div class="new-recipe-grid">
             <section class="creation-section">
                 <div class="recipe-section-heading">
                     <div>
-                        <p class="eyebrow">Per dish</p>
+                        <p class="eyebrow">Per recipe yield</p>
                         <h3>Ingredients</h3>
                         <p>Choose stock items and exact usage quantities.</p>
                     </div>
@@ -267,11 +363,45 @@
             </span>
         </div>
 
+        <div class="recipe-audit" aria-label="Recipe version audit">
+            <span>Created by <strong>{{ recipe.createdBy }}</strong> on {{ recipe.createdAt | date:'medium' }}</span>
+            @if (recipe.approvedBy) {
+            <span>Approved by <strong>{{ recipe.approvedBy }}</strong> on {{ recipe.approvedAt | date:'medium' }}</span>
+            }
+            @if (recipe.effectiveAt) {
+            <span>Effective {{ recipe.effectiveAt | date:'medium' }}</span>
+            }
+            @if (recipe.supersededAt) {
+            <span>Superseded {{ recipe.supersededAt | date:'medium' }} by {{ recipe.supersededBy }}</span>
+            }
+        </div>
+
+        <div class="recipe-yield-panel">
+            <div>
+                <strong>Recipe yield</strong>
+                <small>All ingredient quantities below make this output.</small>
+            </div>
+            @if (recipe.active) {
+            <label>
+                <span class="sr-only">Yield quantity</span>
+                <input type="number" min="1" step="1" [ngModel]="recipe.yieldQuantity"
+                    (ngModelChange)="updateYield('quantity', $event)">
+            </label>
+            <label>
+                <span class="sr-only">Yield unit</span>
+                <input type="text" [ngModel]="recipe.yieldUnit"
+                    (ngModelChange)="updateYield('unit', $event)">
+            </label>
+            } @else {
+            <b>{{ recipe.yieldQuantity }} {{ recipe.yieldUnit }}</b>
+            }
+        </div>
+
         <div class="recipe-detail-grid">
             <section class="recipe-section">
                 <div class="recipe-section-heading">
                     <div>
-                        <h3>Ingredients per dish</h3>
+                        <h3>Ingredients per recipe yield</h3>
                         <p>
                             {{ recipe.ingredients.length }}
                             {{ recipe.ingredients.length === 1 ? 'ingredient' : 'ingredients' }}

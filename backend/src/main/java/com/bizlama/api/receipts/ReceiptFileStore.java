@@ -6,9 +6,13 @@ public interface ReceiptFileStore {
 
     StoredReceipt store(String receiptId, MultipartFile file);
 
+    void delete(StoredReceipt receipt);
+
     record StoredReceipt(
             String uri,
-            String mimeType
+            String mimeType,
+            String storageKey,
+            Long generation
     ) {
     }
 }

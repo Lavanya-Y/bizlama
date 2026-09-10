@@ -1,8 +1,12 @@
 package com.bizlama.api.receipts;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -30,31 +34,73 @@ public class LocalReceiptFileStore implements ReceiptFileStore {
 
     @Override
     public StoredReceipt store(String receiptId, MultipartFile file) {
+        Path target = null;
+        boolean created = false;
         try {
             Files.createDirectories(directory);
-
             String extension = extension(file.getOriginalFilename());
-
-            Path target = directory
-                    .resolve(receiptId + extension)
-                    .normalize();
-
+            target = directory.resolve(receiptId + extension).normalize();
             if (!target.startsWith(directory)) {
                 throw new IllegalArgumentException(
                         "Unsafe receipt filename"
                 );
             }
 
-            file.transferTo(target);
+            try (InputStream input = file.getInputStream();
+                    OutputStream output = Files.newOutputStream(
+                            target,
+                            StandardOpenOption.CREATE_NEW,
+                            StandardOpenOption.WRITE
+                    )) {
+                created = true;
+                input.transferTo(output);
+            }
 
             return new StoredReceipt(
                     target.toUri().toString(),
-                    contentType(file)
+                    contentType(file),
+                    target.toString(),
+                    null
             );
-
         } catch (IOException error) {
+            if (created && target != null) {
+                try {
+                    Files.deleteIfExists(target);
+                } catch (IOException cleanupError) {
+                    error.addSuppressed(cleanupError);
+                }
+            }
             throw new IllegalStateException(
                     "Could not store receipt",
+                    error
+            );
+        }
+    }
+
+    @Override
+    public void delete(StoredReceipt receipt) {
+        Path target;
+        try {
+            target = Path.of(URI.create(receipt.uri()))
+                    .toAbsolutePath()
+                    .normalize();
+        } catch (RuntimeException error) {
+            throw new IllegalArgumentException(
+                    "Receipt does not belong to local storage",
+                    error
+            );
+        }
+        if (!target.startsWith(directory)
+                || !target.toString().equals(receipt.storageKey())) {
+            throw new IllegalArgumentException(
+                    "Receipt does not belong to local storage"
+            );
+        }
+        try {
+            Files.deleteIfExists(target);
+        } catch (IOException error) {
+            throw new IllegalStateException(
+                    "Could not delete stored receipt",
                     error
             );
         }

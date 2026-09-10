@@ -1,10 +1,12 @@
 package com.bizlama.api.events;
 
-import java.util.List;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotEmpty;
-
-public record ConfirmKitchenEventRequest (@NotEmpty List<@Valid ParsedKitchenEvent> events) {
-    
+public record ConfirmKitchenEventRequest(
+        @NotBlank String proposalId,
+        @Min(1) int expectedVersion,
+        @NotBlank @Size(max = 200) String idempotencyKey
+) {
 }

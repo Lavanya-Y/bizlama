@@ -1,8 +1,11 @@
 package com.bizlama.api.events;
 
 import com.bizlama.api.domain.Dish;
+import com.bizlama.api.quantity.CanonicalQuantity;
+import com.bizlama.api.quantity.UnitConversionService;
 import com.bizlama.api.store.OperationalRepository;
 
+import java.math.BigDecimal;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -23,9 +26,13 @@ public class KitchenEventParser {
     );
 
     private final OperationalRepository repository;
+    private final UnitConversionService units;
 
-    public KitchenEventParser(OperationalRepository repository) {
+    public KitchenEventParser(
+            OperationalRepository repository,
+            UnitConversionService units) {
         this.repository = repository;
+        this.units = units;
     }
 
     public ParsedKitchenEvent parse(String statement) {
@@ -89,7 +96,8 @@ public class KitchenEventParser {
             Quantity converted =
                     quantity.toBaseUnit(
                             match.ingredientId(),
-                            repository
+                            repository,
+                            units
                     );
 
             return event(
@@ -132,7 +140,7 @@ public class KitchenEventParser {
                     );
 
             Quantity dishes =
-                    new Quantity(quantity.value(), "dishes");
+                    new Quantity(quantity.value(), "each");
 
             return new ParsedKitchenEvent(
                     KitchenEventType.PRODUCTION,
@@ -155,7 +163,8 @@ public class KitchenEventParser {
             Quantity converted =
                     quantity.toBaseUnit(
                             match.ingredientId(),
-                            repository
+                            repository,
+                            units
                     );
 
             return event(
@@ -331,7 +340,7 @@ public class KitchenEventParser {
         }
 
         return new Quantity(
-                Double.parseDouble(matcher.group(1)),
+                new BigDecimal(matcher.group(1)),
                 unit
         );
     }
@@ -359,38 +368,34 @@ public class KitchenEventParser {
     }
 
     private record Quantity(
-            double value,
+            BigDecimal value,
             String unit
     ) {
 
         Quantity toBaseUnit(
                 String ingredientId,
-                OperationalRepository repository
+                OperationalRepository repository,
+                UnitConversionService units
         ) {
-            String base = repository
+            var ingredient = repository
                     .ingredient(ingredientId)
-                    .map(value -> value.baseUnit())
-                    .orElse(unit);
-
-            if (unit.equals("kg") && base.equals("g")) {
-                return new Quantity(value * 1000, "g");
-            }
-
-            if (unit.equals("l") && base.equals("ml")) {
-                return new Quantity(value * 1000, "ml");
-            }
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Ingredient disappeared during quantity normalisation"
+                    ));
+            CanonicalQuantity converted = units.toIngredientBase(
+                    ingredient,
+                    value,
+                    unit
+            );
 
             return new Quantity(
-                    value,
-                    unit.equals("pieces") ? base : unit
+                    converted.quantity(),
+                    converted.unit()
             );
         }
 
         String display() {
-            return (value == Math.rint(value)
-                    ? String.valueOf((long) value)
-                    : String.valueOf(value))
-                    + " " + unit;
+            return value.stripTrailingZeros().toPlainString() + " " + unit;
         }
     }
 }

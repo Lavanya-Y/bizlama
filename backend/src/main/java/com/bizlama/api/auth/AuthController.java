@@ -5,8 +5,9 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
@@ -19,7 +20,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Map;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
@@ -29,15 +29,18 @@ public class AuthController {
     private final AuthProperties properties;
     private final PasswordEncoder passwordEncoder;
     private final ObjectProvider<JwtEncoder> encoder;
+    private final WorkspaceAccessPolicy workspaceAccessPolicy;
 
     public AuthController(
             AuthProperties properties,
             PasswordEncoder passwordEncoder,
-            ObjectProvider<JwtEncoder> encoder
+            ObjectProvider<JwtEncoder> encoder,
+            WorkspaceAccessPolicy workspaceAccessPolicy
     ) {
         this.properties = properties;
         this.passwordEncoder = passwordEncoder;
         this.encoder = encoder;
+        this.workspaceAccessPolicy = workspaceAccessPolicy;
     }
 
     @GetMapping("/config")
@@ -107,11 +110,34 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public Map<String, String> me(Authentication authentication) {
-        return Map.of(
-                "email", authentication.getName(),
-                "role", "OWNER"
-        );
+    public User me(@AuthenticationPrincipal Jwt jwt) {
+        return workspaceAccessPolicy.configuredIdentity(jwt)
+                .map(identity -> new User(
+                        identity.email(),
+                        identity.displayName(),
+                        identity.role()
+                ))
+                .orElseGet(() -> {
+                    String email = firstNonBlank(
+                            jwt.getClaimAsString("email"),
+                            jwt.getSubject(),
+                            "Authenticated user"
+                    );
+                    String name = firstNonBlank(
+                            jwt.getClaimAsString("name"),
+                            email
+                    );
+                    return new User(email, name, "UNASSIGNED");
+                });
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "Authenticated user";
     }
 
     public record AuthConfig(

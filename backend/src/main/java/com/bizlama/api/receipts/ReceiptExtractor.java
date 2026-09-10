@@ -6,6 +6,18 @@ import java.util.List;
 
 public interface ReceiptExtractor {
 
+    default String provider() {
+        return "deterministic-review";
+    }
+
+    default String model() {
+        return "manual-review";
+    }
+
+    default String schemaVersion() {
+        return "receipt-extraction-v1";
+    }
+
     Extraction extract(
             String uri,
             String filename,
@@ -22,10 +34,10 @@ public interface ReceiptExtractor {
 
     record Line(
             String rawName,
-            double quantity,
+            BigDecimal quantity,
             String unit,
             BigDecimal unitPrice,
-            double confidence
+            BigDecimal confidence
     ) {
     }
 }

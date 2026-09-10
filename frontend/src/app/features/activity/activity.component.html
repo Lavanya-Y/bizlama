@@ -4,9 +4,9 @@
             <p class="eyebrow">Kitchen activity</p>
             <h1>Record what happened</h1>
             <p class="screen-intro">
-                Describe one or several purchases, completed dishes, or waste entries
-                in ordinary language. You will always see uncertain interpretations
-                before they are saved.
+                Describe an inventory change, order, or customer feedback
+                in ordinary language. You will always see the structured interpretation
+                before anything is saved.
             </p>
         </div>
     </header>
@@ -16,7 +16,7 @@
             <div class="capture-heading">
                 <span class="feature-icon">+</span>
                 <div>
-                    <p class="eyebrow">AI-assisted entry</p>
+                    <p class="eyebrow">Structured entry</p>
                     <h2>Quick kitchen update</h2>
                 </div>
             </div>
@@ -24,7 +24,8 @@
             <form (ngSubmit)="parseEvent()">
                 <div class="field-heading">
                     <label for="kitchen-update">What changed?</label>
-                    <button type="button" class="voice-button" (click)="startVoiceEntry()" [disabled]="isListening()"
+                    <button type="button" class="voice-button" (click)="startVoiceEntry()"
+                        [disabled]="isListening() || isProcessing() || !!proposal()"
                         data-tooltip="Use your microphone to dictate this update">
                         <span aria-hidden="true"></span>
                         {{ isListening() ? 'Listening' : 'Speak update' }}
@@ -32,18 +33,11 @@
                 </div>
 
                 <textarea id="kitchen-update" [ngModel]="statement()" (ngModelChange)="statement.set($event)"
-                    name="statement" placeholder="For example: Bought 2 kg salt and 12 eggs"></textarea>
-
-                <div class="example-actions" aria-label="Example updates">
-                    @for (example of examples; track example) {
-                    <button type="button" (click)="useExample(example)">
-                        {{ example }}
-                    </button>
-                    }
-                </div>
+                    name="statement" placeholder="Include the action, exact quantity, unit, and item name"
+                    [disabled]="isProcessing() || !!proposal()"></textarea>
 
                 <button type="submit" class="action-button wide-action"
-                    [disabled]="isProcessing() || !statement().trim()">
+                    [disabled]="isProcessing() || !!proposal() || !statement().trim()">
                     {{ isProcessing() ? 'Understanding...' : 'Review update' }}
                 </button>
             </form>
@@ -60,16 +54,22 @@
             </p>
             }
 
-            @if (parsedEvents().length) {
+            @if (proposal(); as currentProposal) {
             <section class="review-card batch-review">
                 <div class="review-copy">
                     <p class="eyebrow">
-                        {{ parsedEvents().length }}
+                        {{ currentProposal.intent }} · {{ parsedEvents().length }}
                         {{ parsedEvents().length === 1 ? 'update' : 'updates' }}
                         ready for confirmation
                     </p>
+                    <p>
+                        {{ currentProposal.confidence | percent: '1.0-0' }} confidence ·
+                        {{ currentProposal.riskTier }} risk · proposal version
+                        {{ currentProposal.version }} · expires
+                        {{ currentProposal.expiresAt | date: 'short' }}
+                    </p>
 
-                    @for (event of parsedEvents(); track event.itemId) {
+                    @for (event of parsedEvents(); track $index) {
                     <article class="parsed-event">
                         <div>
                             <h3>{{ event.summary }}</h3>
@@ -78,6 +78,9 @@
                                 {{ event.item }}
                                 ({{ event.quantity }} {{ event.unit }})
                             </p>
+                            @if (event.expiresAt) {
+                            <p>Expires {{ event.expiresAt | date: 'mediumDate' }}</p>
+                            }
                         </div>
                         <div>
                             <strong>Check</strong>
@@ -88,7 +91,8 @@
 
                 <div class="review-actions">
                     <button type="button" class="secondary-action" (click)="discardEvent()"
-                        data-tooltip="Return to the text without saving">
+                        [disabled]="isProcessing()"
+                        data-tooltip="Discard this server-side proposal and return to the text">
                         Edit
                     </button>
                     <button type="button" class="action-button" (click)="confirmEvent()" [disabled]="isProcessing()"
@@ -109,9 +113,10 @@
                     in one update.
                 </p>
                 <ul>
-                    <li>"Bought 2 kg salt and 12 eggs"</li>
-                    <li>"Made 10 paneer sandwiches"</li>
-                    <li>"Wasted 300 g tomatoes"</li>
+                    <li>Start with bought, order, or a dish name for feedback.</li>
+                    <li>Add the exact quantity and unit.</li>
+                    <li>Include YYYY-MM-DD expiry dates and feedback ratings explicitly.</li>
+                    <li>Use the ingredient or dish name stored for this kitchen.</li>
                 </ul>
             </article>
 

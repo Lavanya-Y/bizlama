@@ -17,17 +17,22 @@
             <dl class="settings-list">
                 <div>
                     <dt>Workspace</dt>
-                    <dd>Madhu and Lavanya's kitchen</dd>
+                    <dd>{{ workspace()?.kitchenName || 'Loading workspace' }}</dd>
+                </div>
+
+                <div>
+                    <dt>Location</dt>
+                    <dd>{{ workspace()?.locationName || 'Loading location' }}</dd>
                 </div>
 
                 <div>
                     <dt>Timezone</dt>
-                    <dd>Asia/Kolkata</dd>
+                    <dd>{{ workspace()?.timeZone || 'Loading timezone' }}</dd>
                 </div>
 
                 <div>
                     <dt>Currency</dt>
-                    <dd>Indian rupee (₹)</dd>
+                    <dd>{{ workspace()?.currency || 'Loading currency' }}</dd>
                 </div>
             </dl>
         </article>
@@ -54,7 +59,10 @@
 
                     <span>
                         <strong>{{ item.name }}</strong>
-                        <small>{{ item.provider }}</small>
+                        <small>
+                            {{ item.provider }} @if (item.state) { · {{ item.state }} }
+                            · {{ item.detail }}
+                        </small>
                     </span>
                 </div>
                 }
@@ -74,19 +82,19 @@
         <div class="responsibility-grid">
             <article>
                 <strong>Routine updates</strong>
-                <p>Clear, high-confidence stock updates can be saved automatically.</p>
-                <span>90% or higher</span>
+                <p>Natural-language stock updates are saved only after explicit confirmation.</p>
+                <span>Never auto-applied</span>
             </article>
 
             <article>
                 <strong>Uncertain updates</strong>
-                <p>Ambiguous items wait for the owner to review them.</p>
-                <span>Owner review</span>
+                <p>Ambiguous or expired proposals must be reviewed or parsed again.</p>
+                <span>Review required</span>
             </article>
 
             <article>
                 <strong>Recipe changes</strong>
-                <p>A recipe never changes without explicit owner approval.</p>
+                <p>A recipe never changes without explicit owner or admin approval.</p>
                 <span>Always protected</span>
             </article>
         </div>

@@ -169,13 +169,13 @@ export class OrdersComponent implements OnInit {
     }
 
     protected nextStatus(status: OrderStatus): OrderStatus | null {
-        return status === 'QUEUED'
-            ? 'PREPARING'
-            : status === 'PREPARING'
-                ? 'READY'
-                : status === 'READY'
-                    ? 'COMPLETED'
-                    : null;
+        if (status === 'QUEUED') {
+            return 'PREPARING';
+        }
+        if (status === 'PREPARING') {
+            return 'DONE';
+        }
+        return null;
     }
 
     protected advanceOrder(order: Order): void {

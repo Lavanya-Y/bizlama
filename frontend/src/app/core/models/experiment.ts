@@ -5,8 +5,11 @@ export interface Experiment {
     theme: string;
     themeCount: number;
     feedbackCount: number;
-    currentButterGrams: number;
-    proposedButterGrams: number;
+    metricName: string;
+    currentValue: number;
+    proposedValue: number;
+    unit: string;
     testDurationDays: number;
+    approvedAt: string | null;
     status: ExperimentStatus;
 }

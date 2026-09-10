@@ -7,6 +7,17 @@ export interface WorkspaceStatus {
         name: string;
         provider: string;
         connected: boolean;
+        detail: string;
+        state?: 'CONFIGURED' | 'REACHABLE' | 'DEGRADED' | 'DISABLED';
+        diagnostic?: {
+            operation: string;
+            model: string;
+            latencyMillis: number;
+            outcome: string;
+            validationResult: string;
+            errorCode: string | null;
+            observedAt: string;
+        } | null;
     }[];
 }
 

@@ -9,6 +9,8 @@ import {
     StockApiService
 } from '../../core/api/stock-api.service';
 
+type CanonicalUnit = 'g' | 'ml' | 'each';
+
 @Component({
     selector: 'app-inventory',
     imports: [CommonModule, FormsModule],
@@ -26,8 +28,9 @@ export class InventoryComponent implements OnInit {
     protected readonly status = signal('all');
     protected readonly page = signal(0);
     protected readonly loading = signal(false);
-    protected readonly ingredient = signal('Paneer');
+    protected readonly ingredient = signal('');
     protected readonly quantity = signal(1);
+    protected readonly unit = signal<CanonicalUnit>('g');
     protected readonly expiry = signal('');
     protected readonly message = signal('');
 
@@ -44,6 +47,16 @@ export class InventoryComponent implements OnInit {
     protected showAdd(): void {
         this.mode.set('add');
         this.message.set('');
+    }
+
+    protected ingredientChanged(value: string): void {
+        this.ingredient.set(value);
+        const existing = this.ingredients().find(
+            (item) => item.name.toLowerCase() === value.trim().toLowerCase()
+        );
+        if (existing && ['g', 'ml', 'each'].includes(existing.baseUnit)) {
+            this.unit.set(existing.baseUnit as CanonicalUnit);
+        }
     }
 
     protected searchChanged(value: string): void {
@@ -92,7 +105,7 @@ export class InventoryComponent implements OnInit {
             return;
         }
 
-        this.api.createIngredient(name).subscribe({
+        this.api.createIngredient(name, this.unit()).subscribe({
             next: (value) => {
                 this.ingredients.update((items) => [...items, value]);
                 this.savePurchase(value.id);
@@ -102,18 +115,23 @@ export class InventoryComponent implements OnInit {
     }
 
     protected statusLabel(value: InventoryLot['status']): string {
-        return value === 'expired'
-            ? 'Expired'
-            : value === 'expiring'
-                ? 'Expiring soon'
-                : 'Available';
+        switch (value) {
+            case 'expired':
+                return 'Expired';
+            case 'expiring':
+                return 'Expiring soon';
+            case 'quarantined':
+                return 'Expiry review';
+            default:
+                return 'Available';
+        }
     }
 
     private savePurchase(ingredientId: string): void {
         this.api.purchase({
             ingredientId,
-            quantity: this.quantity() * 1000,
-            unit: 'g',
+            quantity: this.quantity(),
+            unit: this.unit(),
             purchasedAt: new Date().toISOString().slice(0, 10),
             expiresAt: this.expiry() || undefined,
             source: 'stockroom'
@@ -122,6 +140,7 @@ export class InventoryComponent implements OnInit {
                 this.message.set('Purchase added to inventory.');
                 this.ingredient.set('');
                 this.quantity.set(1);
+                this.unit.set('g');
                 this.expiry.set('');
                 this.mode.set('browse');
                 this.page.set(0);

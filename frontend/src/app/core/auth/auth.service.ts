@@ -8,10 +8,17 @@ export interface AuthConfig {
     identityApiKey?: string;
 }
 
+export type AuthRole =
+    | 'OWNER'
+    | 'ADMIN'
+    | 'KITCHEN_OPERATOR'
+    | 'VIEWER'
+    | 'UNASSIGNED';
+
 export interface AuthUser {
     email: string;
     name: string;
-    role: string;
+    role: AuthRole;
 }
 
 export interface AuthSession {
@@ -58,14 +65,14 @@ export class AuthService {
             this.http.get<AuthConfig>('/api/auth/config').subscribe({
                 next: (config) => {
                     this.config.set(config);
-                    resolve();
+                    this.refreshEffectiveUser(resolve);
                 },
                 error: () => {
                     this.config.set({
                         mode: 'local',
                         projectId: 'bizlama'
                     });
-                    resolve();
+                    this.refreshEffectiveUser(resolve);
                 }
             });
         });
@@ -91,17 +98,19 @@ export class AuthService {
                             returnSecureToken: true
                         }
                     ).pipe(
-                        map((value) => ({
-                            accessToken: value.idToken,
-                            expiresAt: new Date(
-                                Date.now() + Number(value.expiresIn) * 1000
-                            ).toISOString(),
-                            user: {
-                                email: value.email,
-                                name: value.displayName || value.email.split('@')[0],
-                                role: 'OWNER'
-                            }
-                        } as AuthSession))
+                        switchMap((value) => this.effectiveUser(
+                            value.idToken,
+                            value.email,
+                            value.displayName
+                        ).pipe(
+                            map((user) => ({
+                                accessToken: value.idToken,
+                                expiresAt: new Date(
+                                    Date.now() + Number(value.expiresIn) * 1000
+                                ).toISOString(),
+                                user
+                            } as AuthSession))
+                        ))
                     );
                 }
 
@@ -147,6 +156,26 @@ export class AuthService {
         this.session.set(session);
     }
 
+    private refreshEffectiveUser(done: () => void): void {
+        const session = this.session();
+        if (!session || !this.authenticated()) {
+            done();
+            return;
+        }
+
+        this.effectiveUser(
+            session.accessToken,
+            session.user.email,
+            session.user.name
+        ).subscribe({
+            next: (user) => {
+                this.saveSession({ ...session, user });
+                done();
+            },
+            error: () => done()
+        });
+    }
+
     private restoreSession(): AuthSession | null {
         try {
             const raw = sessionStorage.getItem(this.storageKey);
@@ -159,16 +188,55 @@ export class AuthService {
 
             if (
                 !session.accessToken ||
+                !session.user?.email ||
                 new Date(session.expiresAt).getTime() <= Date.now()
             ) {
                 sessionStorage.removeItem(this.storageKey);
                 return null;
             }
 
-            return session;
+            return {
+                ...session,
+                user: {
+                    ...session.user,
+                    role: 'UNASSIGNED'
+                }
+            };
         } catch {
             sessionStorage.removeItem(this.storageKey);
             return null;
         }
+    }
+
+    private effectiveUser(
+        token: string,
+        fallbackEmail: string,
+        fallbackName?: string
+    ): Observable<AuthUser> {
+        return this.http.get<AuthUser>('/api/auth/me', {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        }).pipe(
+            map((value) => ({
+                email: typeof value.email === 'string' && value.email.trim()
+                    ? value.email.trim()
+                    : fallbackEmail,
+                name: typeof value.name === 'string' && value.name.trim()
+                    ? value.name.trim()
+                    : fallbackName || fallbackEmail.split('@')[0],
+                role: this.isAuthRole(value.role)
+                    ? value.role
+                    : 'UNASSIGNED'
+            }))
+        );
+    }
+
+    private isAuthRole(value: unknown): value is AuthRole {
+        return value === 'OWNER'
+            || value === 'ADMIN'
+            || value === 'KITCHEN_OPERATOR'
+            || value === 'VIEWER'
+            || value === 'UNASSIGNED';
     }
 }

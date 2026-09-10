@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import {
     Router,
     RouterLink,
@@ -17,6 +17,10 @@ export class App {
     private readonly router = inject(Router);
     protected readonly sidebarCollapsed = signal(false);
     protected readonly mobileNavigationOpen = signal(false);
+    protected readonly workspaceLabel = computed(() => {
+        const name = this.auth.user()?.name?.trim();
+        return name ? `${name}'s kitchen` : 'Kitchen workspace';
+    });
 
     protected toggleSidebar(): void {
         this.sidebarCollapsed.update((collapsed) => !collapsed);

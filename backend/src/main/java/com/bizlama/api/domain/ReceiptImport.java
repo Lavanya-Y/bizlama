@@ -16,16 +16,16 @@ public record ReceiptImport (
     Instant createdAt,
    List<ReceiptItem> items ) {
 
-    public enum Status {NEEDS_REVIEW, READY, CONFIRMED, FAILED}  
+    public enum Status {UPLOADED, EXTRACTING, REVIEW_REQUIRED, FAILED, CONFIRMED}
     public record ReceiptItem (
         String id,
         String rawName,
         String ingredientId,
         String canonicalName,
-        double quantity,
+        BigDecimal quantity,
         String unit,
         BigDecimal unitPrice,
-        double confidence,
+        BigDecimal confidence,
         boolean selected
     ) {}
 }

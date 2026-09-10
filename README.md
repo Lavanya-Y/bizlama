@@ -5,7 +5,7 @@ BizLaMa is an AI-assisted kitchen operations workspace for small food businesses
 ## What is implemented
 
 - Persistent operational storage with version-controlled Flyway migrations.
-- Local disk-backed H2 by default, PostgreSQL/Cloud SQL in the `cloud` profile, and an explicit in-memory fallback profile.
+- PostgreSQL as the operational database locally and in cloud mode, with H2 available only through the explicit non-persistent `memory` fallback profile.
 - Branded-product normalization for Indian-market examples such as Amul Paneer and Heritage High Protein Paneer.
 - Natural-language and browser voice capture for purchases, production, and waste.
 - Multi-item natural-language capture, including shorthand such as `2 kg salt` and `12 eggs`, with one atomic review.
@@ -23,7 +23,26 @@ BizLaMa is an AI-assisted kitchen operations workspace for small food businesses
 
 ## Run locally
 
-Requirements: Java 21, Maven, Node.js 20+.
+The normal local path uses PostgreSQL and persists both database data and local receipt evidence in named Docker volumes. Requirements: Docker with Docker Compose.
+
+```bash
+docker compose up --build
+```
+
+Open `http://127.0.0.1:8080` and sign in with:
+
+- Email: `owner@bizlama.local`
+- Password: `bizlama-demo`
+
+Those credentials and the Compose database password are development-only. Copy `.env.example` to an untracked `.env` to override them. `docker compose down` stops the stack without deleting data; `docker compose down --volumes` deliberately deletes the local PostgreSQL and receipt volumes.
+
+### Split frontend/backend development
+
+Requirements: Java 21, Maven, Node.js 20+, and Docker. Start only PostgreSQL first:
+
+```bash
+docker compose up -d postgres
+```
 
 ### Terminal 1
 
@@ -47,30 +66,51 @@ Open `http://127.0.0.1:4200` and sign in with:
 
 Those credentials are development-only and can be overridden with the variables in `.env.example`.
 
-Data is stored in `backend/.data/bizlama.mv.db` and survives restarts.
+The backend's normal profile connects to `jdbc:postgresql://localhost:5432/bizlama`. The `bizlama-postgres-data` volume survives container and application restarts.
 
-To deliberately test the fallback instead, start the backend with:
+To deliberately use the non-persistent H2 fallback for a narrow local check, start the backend with:
 
 ```bash
---spring.profiles.active=memory
+JAVA_HOME=/path/to/jdk-21 mvn spring-boot:run -Dspring-boot.run.profiles=memory
 ```
+
+The H2 fallback does not validate PostgreSQL-specific migrations, constraints, or row-locking behavior and is not the supported persistence path.
 
 ## Deploy to the prepared GCP project
 
-In Cloud Shell, upload or clone this directory, then run from the repository root:
+Start from `infra/gcp/config.example.env`, copy it to a protected file outside
+source control, replace every placeholder, and select whether receipt extraction
+and recommendation explanations use Vertex AI. Then run the validated dry-run
+sequence from the repository root:
 
 ```bash
-bash infra/gcp/bootstrap.sh
-bash infra/gcp/deploy.sh
+export BIZLAMA_GCP_CONFIG=/secure/path/bizlama-gcp.env
+infra/gcp/validate-config.sh
+infra/gcp/bootstrap.sh --dry-run
+infra/gcp/deploy.sh --dry-run
 ```
 
-The scripts are idempotent. They reuse `bizlama-db` and the existing `bizlama-db-password`, create missing data/receipt buckets, create all BigQuery analytics tables, and prepare the runtime identity.
+Review the rendered project, region, identities, resources, IAM, and cost before
+running the explicit `--apply` sequence in
+`infra/gcp/README.md`. The scripts are convergent and target only names in the
+configuration file.
 
-Bootstrap creates separate Secret Manager values for the owner password and token-signing key; it prints a generated owner password only on first creation.
+Bootstrap creates Secret Manager containers without values.
+`configure-secrets.sh` reads values from protected files and does not print
+them.
 
 Flyway creates or upgrades the complete Cloud SQL schema when the new revision starts.
 
-No service-account key file is needed. Cloud Run uses its attached runtime identity and Application Default Credentials for Cloud SQL, Storage, BigQuery, Vertex AI, and Secret Manager.
+No service-account key file is needed. Each Cloud Run service uses its attached
+least-privilege identity and Application Default Credentials. Set
+`VERTEX_RECEIPTS_ENABLED=true` to enable schema-constrained receipt extraction;
+the API identity then receives Vertex user access and already has object-user
+access to the private receipts bucket. Failed extraction safely enters manual
+review without inventing values or expiry dates.
+
+The deployment supplies a service-specific Cloud Run CORS origin pattern. A
+separately hosted browser can instead set one explicit HTTPS
+`CORS_ALLOWED_ORIGIN_PATTERN`; arbitrary origins are not enabled.
 
 ## Production guardrails
 

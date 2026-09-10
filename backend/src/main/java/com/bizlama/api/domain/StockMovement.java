@@ -1,5 +1,6 @@
 package com.bizlama.api.domain;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 public record StockMovement (
@@ -7,7 +8,7 @@ public record StockMovement (
     String stockLotId,
     String ingredientId,
     MovementType type,
-    double quantityChange,
+    BigDecimal quantityChange,
     String unit,
     String referenceType,
     String referenceId,
@@ -18,6 +19,8 @@ public record StockMovement (
         PRODUCTION_CONSUMPTION,
         WASTE,
         MANUAL_ADJUSTMENT,
-        EXPIRY_WRITE_OFF
+        EXPIRY_WRITE_OFF,
+        REVERSAL,
+        CORRECTION
     }
 }

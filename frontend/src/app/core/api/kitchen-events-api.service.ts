@@ -1,8 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import {
-    ParseKitchenEventResponse,
-    ParsedKitchenEvent
+    ConfirmKitchenEventRequest,
+    ParseKitchenEventResponse
 } from '../models/kitchen-event';
 
 @Injectable({ providedIn: 'root' })
@@ -17,10 +17,17 @@ export class KitchenEventsApiService {
         );
     }
 
-    confirm(events: ParsedKitchenEvent[]) {
+    confirm(request: ConfirmKitchenEventRequest) {
         return this.http.post<void>(
             `${this.baseUrl}/confirm`,
-            { events }
+            request
+        );
+    }
+
+    supersede(proposalId: string, expectedVersion: number) {
+        return this.http.post<void>(
+            `${this.baseUrl}/${proposalId}/supersede`,
+            { expectedVersion }
         );
     }
 }

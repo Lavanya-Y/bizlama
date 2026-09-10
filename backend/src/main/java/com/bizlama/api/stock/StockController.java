@@ -1,8 +1,8 @@
 package com.bizlama.api.stock;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.bizlama.api.common.PageResponse;
+import com.bizlama.api.config.WorkspaceProperties;
 import com.bizlama.api.domain.InventoryLot;
 import com.bizlama.api.domain.InventorySummary;
 import com.bizlama.api.domain.StockLot;
@@ -33,12 +34,18 @@ public class StockController {
 
     private final OperationalRepository store;
     private final ShelfLifeGuidanceProvider shelfLifeGuidanceProvider;
+    private final InventoryPurchaseService purchases;
+    private final WorkspaceProperties workspace;
 
     public StockController(
             OperationalRepository store,
-            ShelfLifeGuidanceProvider shelfLifeGuidanceProvider) {
+            ShelfLifeGuidanceProvider shelfLifeGuidanceProvider,
+            InventoryPurchaseService purchases,
+            WorkspaceProperties workspace) {
         this.store = store;
         this.shelfLifeGuidanceProvider = shelfLifeGuidanceProvider;
+        this.purchases = purchases;
+        this.workspace = workspace;
     }
 
     @GetMapping
@@ -87,45 +94,52 @@ public class StockController {
         }
 
         LocalDate expiry = request.expiresAt();
+        ExpiryProvenance provenance = ExpiryProvenance.OWNER_CONFIRMED;
 
         if (expiry == null) {
-            expiry = shelfLifeGuidanceProvider
+            var guidance = shelfLifeGuidanceProvider
                     .findForIngredient(request.ingredientId())
-                    .map(guidance ->
-                            guidance.expiresOn(request.purchasedAt()))
                     .orElseThrow(() ->
                             new ResponseStatusException(
                                     HttpStatus.UNPROCESSABLE_ENTITY,
-                                    "Expiry date is required because no "
-                                            + "shelf-life guidance is available."
+                                    "Expiry date is required because no reviewed "
+                                            + "shelf-life rule is available."
                             ));
+            expiry = guidance.expiresOn(request.purchasedAt());
+            provenance = ExpiryProvenance.REVIEWED_SHELF_LIFE_RULE;
         }
 
-        if (!expiry.isAfter(request.purchasedAt())) {
+        if (expiry.isBefore(request.purchasedAt())) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Expiry must be after the purchase date."
+                    "Expiry cannot be before the purchase date."
             );
         }
 
-        String id = UUID.randomUUID().toString();
-
-        StockLot lot = new StockLot(
-                id,
+        return purchases.add(new InventoryPurchaseService.Purchase(
+                null,
+                workspace.kitchenId(),
+                workspace.locationId(),
                 request.ingredientId(),
+                request.quantity(),
+                request.unit(),
                 request.quantity(),
                 request.unit(),
                 request.purchasedAt(),
                 expiry,
-                request.source()
-        );
-
-        return store.addPurchase(lot);
+                provenance,
+                request.source(),
+                "manual-purchase",
+                request.ingredientId(),
+                null,
+                null,
+                java.time.Instant.now()
+        ));
     }
 
     public record PurchaseRequest(
             @NotBlank String ingredientId,
-            @Positive double quantity,
+            @NotNull @Positive BigDecimal quantity,
             @NotBlank String unit,
             @NotNull LocalDate purchasedAt,
             LocalDate expiresAt,

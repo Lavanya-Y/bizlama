@@ -1853,6 +1853,43 @@ a {
     padding: 14px 0;
 }
 
+.secure-receipt-line {
+    grid-template-columns:
+        26px minmax(130px, 1.2fr) minmax(120px, 1fr)
+        80px 72px minmax(150px, 1fr) 120px 90px;
+}
+
+.secure-receipt-line label small {
+    color: var(--muted);
+    display: block;
+    font-size: 9px;
+    margin-top: 4px;
+}
+
+.rejected-line {
+    opacity: 0.65;
+}
+
+.manual-receipt-line {
+    align-items: end;
+    background: var(--brand-soft);
+    border-radius: 12px;
+    display: grid;
+    gap: 10px;
+    grid-template-columns: minmax(140px, 1.5fr) 90px 90px 110px auto;
+    margin: 12px 0;
+    padding: 12px;
+}
+
+.manual-receipt-line label {
+    margin: 0;
+}
+
+.manual-receipt-actions {
+    display: flex;
+    gap: 8px;
+}
+
 .receipt-line label {
     margin: 0;
 }
@@ -2795,9 +2832,16 @@ a {
     .receipt-line label:nth-of-type(3),
     .receipt-line label:nth-of-type(4),
     .receipt-line label:nth-of-type(5),
+    .receipt-line label:nth-of-type(6),
+    .receipt-line label:nth-of-type(7),
     .receipt-line .line-confidence,
     .receipt-line .icon-button {
         grid-column: 2;
+    }
+
+    .manual-receipt-line {
+        align-items: stretch;
+        grid-template-columns: 1fr;
     }
 
     .receipt-review-footer,
@@ -2915,5 +2959,623 @@ a {
 
     .login-panel {
         padding: 24px 16px;
+    }
+}
+
+/* Governed demand cockpit */
+.recommendation-cockpit {
+    background: linear-gradient(135deg, #f4faf6, #fffdf7);
+    border: 1px solid #cddfd5;
+    border-radius: 20px;
+    box-shadow: var(--shadow);
+    margin-bottom: 22px;
+    padding: 24px;
+}
+
+.recommendation-heading,
+.recommendation-action,
+.recommendation-status-row,
+.recommendation-actions,
+.recommendation-edit,
+.recommendation-card footer {
+    align-items: center;
+    display: flex;
+    gap: 14px;
+    justify-content: space-between;
+}
+
+.recommendation-heading {
+    align-items: flex-start;
+}
+
+.recommendation-heading h2 {
+    font-family: Georgia, serif;
+    font-size: 28px;
+    font-weight: 500;
+    margin: 7px 0 5px;
+}
+
+.recommendation-heading p:last-child {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0;
+}
+
+.recommendation-card {
+    background: #fff;
+    border: 1px solid #dce6e0;
+    border-left: 5px solid var(--brand);
+    border-radius: 16px;
+    margin-top: 18px;
+    padding: 20px;
+}
+
+.recommendation-card.high-risk {
+    border-left-color: #b96d1f;
+}
+
+.risk-badge,
+.sync-state {
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    padding: 6px 10px;
+    text-transform: uppercase;
+}
+
+.risk-badge {
+    background: var(--brand-soft);
+    color: var(--brand);
+}
+
+.risk-badge.high {
+    background: #fff3df;
+    color: #935a13;
+}
+
+.sync-state {
+    color: var(--muted);
+}
+
+.recommendation-action {
+    align-items: flex-start;
+    margin: 22px 0 16px;
+}
+
+.recommendation-action h3 {
+    font-family: Georgia, serif;
+    font-size: clamp(25px, 4vw, 36px);
+    font-weight: 500;
+    letter-spacing: -0.025em;
+    margin: 0 0 8px;
+}
+
+.recommendation-action p {
+    color: #52615b;
+    line-height: 1.55;
+    margin: 0;
+    max-width: 710px;
+}
+
+.recommendation-quantity {
+    background: var(--brand-soft);
+    border-radius: 14px;
+    display: grid;
+    min-width: 120px;
+    padding: 14px;
+    text-align: right;
+}
+
+.recommendation-quantity strong {
+    color: var(--brand);
+    font-family: Georgia, serif;
+    font-size: 27px;
+}
+
+.recommendation-quantity span {
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.calculation-summary {
+    background: #f8faf8;
+    border: 1px solid #e1e8e3;
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+
+.calculation-summary strong {
+    font-size: 12px;
+}
+
+.calculation-summary p {
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 6px 0;
+}
+
+.calculation-summary small {
+    color: var(--muted);
+}
+
+.recommendation-explanation {
+    background: #f3f7ff;
+    border: 1px solid #d9e2f1;
+    border-radius: 12px;
+    margin-bottom: 12px;
+    padding: 14px 16px;
+}
+
+.explanation-heading,
+.operator-form-heading,
+.operator-form-actions {
+    align-items: flex-start;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+}
+
+.explanation-heading>strong,
+.operator-form-heading strong {
+    font-size: 12px;
+}
+
+.explanation-heading>span {
+    background: #e5edfb;
+    border-radius: 999px;
+    color: #3c5278;
+    flex: 0 0 auto;
+    font-size: 9px;
+    font-weight: 800;
+    padding: 5px 8px;
+    text-transform: uppercase;
+}
+
+.recommendation-explanation p,
+.recommendation-explanation ul {
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.recommendation-explanation p {
+    margin: 8px 0;
+}
+
+.recommendation-explanation ul {
+    margin: 7px 0;
+    padding-left: 20px;
+}
+
+.recommendation-explanation small,
+.operator-form-actions small,
+.operator-evidence-form label small {
+    color: var(--muted);
+    line-height: 1.45;
+}
+
+.explanation-caveats {
+    background: #fff8e9;
+    border-radius: 9px;
+    margin: 10px 0;
+    padding: 10px 12px;
+}
+
+.explanation-caveats strong {
+    color: #79541c;
+    font-size: 11px;
+}
+
+.explanation-unavailable {
+    color: var(--critical);
+}
+
+.operator-evidence-form {
+    background: #fbfcfb;
+    border: 1px solid #dce6e0;
+    border-radius: 13px;
+    margin-top: 16px;
+    padding: 16px;
+}
+
+.operator-form-heading {
+    margin-bottom: 14px;
+}
+
+.operator-form-heading p {
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.45;
+    margin: 5px 0 0;
+}
+
+.operator-form-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.operator-evidence-form label {
+    margin: 0;
+}
+
+.operator-evidence-form label small {
+    display: block;
+    font-size: 9px;
+    margin-top: 4px;
+}
+
+.operator-evidence-form textarea {
+    min-height: 76px;
+    resize: vertical;
+}
+
+.form-field-wide {
+    grid-column: 1 / -1;
+}
+
+.operator-form-actions {
+    align-items: center;
+    justify-content: flex-start;
+    margin-top: 14px;
+}
+
+.destructive-action {
+    border-color: #c67a6e;
+    color: #963d31;
+}
+
+.reversal-form {
+    border-color: #ead4cf;
+}
+
+.recommendation-actions,
+.recommendation-edit {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    margin-top: 16px;
+}
+
+.recommendation-edit label {
+    margin: 0;
+    max-width: 220px;
+}
+
+.text-action,
+.calculation-toggle,
+.recommendation-selector button {
+    background: transparent;
+    border: 0;
+    color: var(--brand);
+    cursor: pointer;
+    font-weight: 750;
+    padding: 10px 6px;
+}
+
+.text-action:disabled,
+.calculation-toggle:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.calculation-toggle {
+    margin-top: 10px;
+}
+
+.calculation-evidence {
+    border-top: 1px solid #e2e7e3;
+    margin-top: 8px;
+    padding-top: 16px;
+}
+
+.evidence-meta,
+.calculation-grid {
+    display: grid;
+    gap: 10px 18px;
+}
+
+.evidence-meta {
+    grid-template-columns: auto 1fr;
+}
+
+.evidence-meta span,
+.calculation-grid dt {
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.evidence-meta strong {
+    font-size: 12px;
+}
+
+.calculation-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    margin: 18px 0;
+}
+
+.calculation-grid>div {
+    background: #f8faf8;
+    border-radius: 10px;
+    padding: 12px;
+}
+
+.calculation-grid dd {
+    font-size: 13px;
+    font-weight: 800;
+    margin: 6px 0 0;
+}
+
+.evidence-sources {
+    color: #52615b;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.evidence-sources p {
+    margin: 7px 0;
+}
+
+.evidence-sources span {
+    display: inline-block;
+    margin-right: 8px;
+}
+
+.recommendation-card footer {
+    border-top: 1px solid #edf0ed;
+    color: var(--muted);
+    font-size: 10px;
+    margin-top: 14px;
+    padding-top: 12px;
+}
+
+.recommendation-selector {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    overflow-x: auto;
+}
+
+.recommendation-selector button {
+    border: 1px solid #cfdad4;
+    border-radius: 999px;
+    flex: 0 0 auto;
+    padding: 8px 12px;
+}
+
+.recommendation-selector button.active {
+    background: var(--brand);
+    color: #fff;
+}
+
+.recommendation-empty {
+    padding: 28px 0 8px;
+    text-align: center;
+}
+
+.recommendation-empty p {
+    color: var(--muted);
+    margin: 8px auto 16px;
+    max-width: 560px;
+}
+
+.cockpit-notice {
+    align-items: flex-start;
+    border-radius: 10px;
+    display: flex;
+    font-size: 12px;
+    gap: 8px;
+    margin: 12px 0;
+    padding: 11px 14px;
+}
+
+.cockpit-notice.warning {
+    background: #fff7e7;
+    color: #7d541d;
+}
+
+.cockpit-notice.error {
+    background: #fff0ed;
+    color: var(--critical);
+}
+
+@media (max-width: 800px) {
+    .recommendation-heading,
+    .recommendation-action {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .recommendation-quantity {
+        text-align: left;
+    }
+
+    .calculation-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .operator-form-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 520px) {
+    .recommendation-cockpit {
+        border-radius: 16px;
+        padding: 17px;
+    }
+
+    .recommendation-actions>*,
+    .recommendation-edit,
+    .recommendation-edit>* {
+        width: 100%;
+    }
+
+    .operator-evidence-form {
+        padding: 14px;
+    }
+
+    .operator-form-heading,
+    .operator-form-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .calculation-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.recipe-audit {
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    font-size: 10px;
+    gap: 8px 18px;
+    margin: -8px 0 16px;
+}
+
+.recipe-yield-panel {
+    align-items: end;
+    background: #f4f8f5;
+    border: 1px solid #dce6df;
+    border-radius: 12px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(0, 1fr) 110px 110px;
+    margin-bottom: 16px;
+    padding: 13px 15px;
+}
+
+.recipe-yield-panel strong,
+.recipe-yield-panel small {
+    display: block;
+}
+
+.recipe-yield-panel small {
+    color: var(--muted);
+    margin-top: 4px;
+}
+
+.recipe-yield-panel label {
+    margin: 0;
+}
+
+@media (max-width: 700px) {
+    .recipe-yield-panel {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .recipe-yield-panel>div {
+        grid-column: 1 / -1;
+    }
+}
+
+.provenance-review-card {
+    background: var(--warning-soft);
+    border-color: #ead39d;
+    margin-bottom: 18px;
+}
+
+.provenance-review-heading {
+    align-items: center;
+    display: flex;
+    gap: 16px;
+    justify-content: space-between;
+}
+
+.provenance-review-heading h2 {
+    margin: 3px 0 0;
+}
+
+.provenance-review-intro {
+    color: var(--muted);
+    line-height: 1.55;
+    margin: 12px 0 16px;
+    max-width: 900px;
+}
+
+.provenance-reason {
+    display: grid;
+    gap: 5px;
+    max-width: 680px;
+}
+
+.provenance-reason small,
+.provenance-owner-note,
+.provenance-review-row small {
+    color: var(--muted);
+}
+
+.provenance-owner-note {
+    font-size: 12px;
+    margin: 10px 0 0;
+}
+
+.provenance-review-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 390px), 1fr));
+    margin-top: 16px;
+}
+
+.provenance-review-group {
+    background: #fff;
+    border: 1px solid #eadfbe;
+    border-radius: 12px;
+    padding: 14px;
+}
+
+.provenance-review-group h3 {
+    font-family: Georgia, serif;
+    font-size: 18px;
+    font-weight: 500;
+    margin: 0 0 6px;
+}
+
+.provenance-review-row {
+    align-items: center;
+    display: flex;
+    gap: 14px;
+    justify-content: space-between;
+    padding: 12px 0;
+}
+
+.provenance-review-row + .provenance-review-row {
+    border-top: 1px solid #eee5ce;
+}
+
+.provenance-review-row > div {
+    min-width: 0;
+}
+
+.provenance-review-row strong,
+.provenance-review-row small {
+    display: block;
+}
+
+.provenance-review-row small {
+    line-height: 1.45;
+    margin-top: 3px;
+}
+
+.provenance-review-row code {
+    overflow-wrap: anywhere;
+}
+
+.provenance-review-row button {
+    flex: 0 0 auto;
+}
+
+@media (max-width: 620px) {
+    .provenance-review-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .provenance-review-row button {
+        width: 100%;
     }
 }

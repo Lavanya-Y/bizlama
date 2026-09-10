@@ -14,12 +14,12 @@ public record Order (
     public enum Status {
        QUEUED,
        PREPARING,
-       READY,
-       COMPLETED,
+       DONE,
         CANCELLED
     }
     public record OrderItem (
         String dishId,
+        String recipeVersionId,
         int quantity,
         BigDecimal unitPrice
     ) {}

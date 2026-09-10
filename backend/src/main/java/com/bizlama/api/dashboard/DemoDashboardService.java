@@ -1,73 +1,111 @@
 package com.bizlama.api.dashboard;
 
+import com.bizlama.api.config.WorkspaceProperties;
 import com.bizlama.api.domain.Ingredient;
-import com.bizlama.api.domain.Order;
 import com.bizlama.api.domain.StockLot;
+import com.bizlama.api.recommendations.DemandCalculation;
+import com.bizlama.api.recommendations.DemandCalculation.DemandScope;
+import com.bizlama.api.recommendations.DemandCalculationService;
+import com.bizlama.api.recommendations.GovernedRecommendation;
+import com.bizlama.api.recommendations.RecommendationService;
 import com.bizlama.api.store.OperationalRepository;
-import org.springframework.stereotype.Service;
-
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.springframework.stereotype.Service;
 
 @Service
 public class DemoDashboardService {
 
     private final OperationalRepository repository;
+    private final DemandCalculationService demand;
+    private final RecommendationService recommendations;
+    private final WorkspaceProperties workspace;
 
-    public DemoDashboardService(OperationalRepository repository) {
+    public DemoDashboardService(
+            OperationalRepository repository,
+            DemandCalculationService demand,
+            RecommendationService recommendations,
+            WorkspaceProperties workspace
+    ) {
         this.repository = repository;
+        this.demand = demand;
+        this.recommendations = recommendations;
+        this.workspace = workspace;
     }
 
-    public DashboardResponse getDashboard() {
+    public DashboardResponse getDashboard(
+            String kitchenId,
+            String locationId
+    ) {
+        Instant now = Instant.now();
+        LocalDate today = now.atZone(workspace.zoneId()).toLocalDate();
+        DemandCalculation calculation = demand.calculate(new DemandScope(
+                kitchenId,
+                locationId,
+                now.minus(Duration.ofDays(30)),
+                now.plus(Duration.ofDays(1)),
+                now
+        ));
 
         Map<String, Ingredient> ingredients = repository.ingredients()
                 .stream()
-                .collect(Collectors.toMap(
-                        Ingredient::id,
-                        value -> value
-                ));
-
+                .collect(Collectors.toMap(Ingredient::id, value -> value));
         List<StockLot> lots = repository.stockLots();
-
         List<DashboardResponse.StockItem> stock = lots.stream()
                 .map(lot -> stockItem(
                         lot,
-                        ingredients.get(lot.ingredientId())
+                        ingredients.get(lot.ingredientId()),
+                        today
                 ))
                 .toList();
-
-        List<DashboardResponse.PrepRequirement> prep = prepRequirements();
+        List<DashboardResponse.PrepRequirement> prep =
+                calculation.preparations().stream()
+                        .map(value -> new DashboardResponse.PrepRequirement(
+                                value.dishName(),
+                                value.quantity().intValueExact(),
+                                value.requiredIngredientIds().stream()
+                                        .map(id -> ingredientName(id, ingredients))
+                                        .collect(Collectors.joining(", "))
+                        ))
+                        .toList();
 
         long expiring = lots.stream()
-                .filter(lot -> !lot.expiresAt().isAfter(
-                        LocalDate.now().plusDays(2)
-                ))
+                .filter(lot -> !lot.expiresAt().isAfter(today.plusDays(2)))
                 .count();
-
         int prepCount = prep.stream()
                 .mapToInt(DashboardResponse.PrepRequirement::quantity)
                 .sum();
 
         List<DashboardResponse.RestockSuggestion> restock =
-                restockSuggestions(lots, ingredients);
+                recommendations.recommendations(kitchenId, locationId, null)
+                        .stream()
+                        .filter(value ->
+                                value.type() == GovernedRecommendation.Type.PURCHASE
+                                        && (value.status()
+                                                == GovernedRecommendation.Status.PENDING
+                                            || value.status()
+                                                == GovernedRecommendation.Status.APPROVED))
+                        .map(value -> new DashboardResponse.RestockSuggestion(
+                                ingredientName(value.ingredientId(), ingredients),
+                                format(value.proposedQuantity()) + " " + value.unit(),
+                                "Demand plus safety stock exceeds usable supply"
+                        ))
+                        .toList();
 
         List<DashboardResponse.RecentEvent> recentEvents =
-                repository.activities()
-                        .stream()
+                repository.activities().stream()
                         .map(event -> new DashboardResponse.RecentEvent(
                                 event.type(),
                                 event.description(),
-                                friendlyTime(event.occurredAt())
+                                friendlyTime(event.occurredAt(), now)
                         ))
                         .toList();
 
@@ -76,25 +114,25 @@ public class DemoDashboardService {
                         new DashboardResponse.Metric(
                                 "Stock items",
                                 String.valueOf(lots.size()),
-                                "Available lots across your stockroom",
+                                "Usable, non-expired lots at this location",
                                 "neutral"
                         ),
                         new DashboardResponse.Metric(
                                 "Expiring soon",
                                 String.valueOf(expiring),
-                                "Lots expiring in the next two days",
+                                "Usable lots expiring in the next two days",
                                 expiring > 0 ? "warning" : "good"
                         ),
                         new DashboardResponse.Metric(
                                 "Today's prep",
                                 prepCount + " dishes",
-                                "Calculated from queued orders and active recipes",
+                                "Exact recipe versions from queued orders",
                                 "neutral"
                         ),
                         new DashboardResponse.Metric(
                                 "Restock signals",
                                 String.valueOf(restock.size()),
-                                "Suggestions based on usable quantity and demand",
+                                "Current governed purchase recommendations",
                                 restock.isEmpty() ? "good" : "warning"
                         )
                 ),
@@ -111,182 +149,58 @@ public class DemoDashboardService {
 
     private DashboardResponse.StockItem stockItem(
             StockLot lot,
-            Ingredient ingredient
+            Ingredient ingredient,
+            LocalDate today
     ) {
-
-        long days = ChronoUnit.DAYS.between(
-                LocalDate.now(),
-                lot.expiresAt()
-        );
-
-        String label =
-                days < 0 ? "Expired" :
-                days == 0 ? "Expires today" :
-                days == 1 ? "Expires tomorrow" :
-                "Expires in " + days + " days";
-
-        String status =
-                days <= 0 ? "critical" :
-                days <= 2 ? "warning" :
-                "good";
+        long days = ChronoUnit.DAYS.between(today, lot.expiresAt());
+        String label = days < 0 ? "Expired"
+                : days == 0 ? "Expires today"
+                : days == 1 ? "Expires tomorrow"
+                : "Expires in " + days + " days";
+        String status = days <= 0 ? "critical"
+                : days <= 2 ? "warning"
+                : "good";
 
         return new DashboardResponse.StockItem(
-                ingredient == null
-                        ? lot.ingredientId()
-                        : ingredient.name(),
+                ingredient == null ? lot.ingredientId() : ingredient.name(),
                 format(lot.quantityRemaining()) + " " + lot.unit(),
                 label,
                 status
         );
     }
 
-    private List<DashboardResponse.PrepRequirement> prepRequirements() {
-
-        Map<String, Integer> quantityByDish = new LinkedHashMap<>();
-
-        repository.orders()
-                .stream()
-                .filter(order ->
-                        order.status() == Order.Status.QUEUED ||
-                        order.status() == Order.Status.PREPARING
-                )
-                .flatMap(order -> order.items().stream())
-                .forEach(item ->
-                        quantityByDish.merge(
-                                item.dishId(),
-                                item.quantity(),
-                                Integer::sum
-                        )
-                );
-
-        List<DashboardResponse.PrepRequirement> result =
-                new ArrayList<>();
-
-        quantityByDish.forEach((dishId, quantity) ->
-                repository.dish(dishId).ifPresent(dish -> {
-
-                    String ingredients = repository
-                            .recipe(dish.activeRecipeVersionId())
-                            .map(recipe ->
-                                    recipe.ingredients()
-                                            .stream()
-                                            .map(item ->
-                                                    format(item.quantity() * quantity)
-                                                            + " "
-                                                            + item.unit()
-                                                            + " "
-                                                            + ingredientName(
-                                                                    item.ingredientId()
-                                                            )
-                                            )
-                                            .collect(Collectors.joining(
-                                                    ", "
-                                            ))
-                            )
-                            .orElse("Recipe not configured");
-
-                    result.add(
-                            new DashboardResponse.PrepRequirement(
-                                    dish.name(),
-                                    quantity,
-                                    ingredients
-                            )
-                    );
-                })
-        );
-
-        return result;
-    }
-
-    private List<DashboardResponse.RestockSuggestion> restockSuggestions(
-            List<StockLot> lots,
+    private String ingredientName(
+            String id,
             Map<String, Ingredient> ingredients
     ) {
-
-        Map<String, Double> totals = new LinkedHashMap<>();
-
-        lots.forEach(lot ->
-                totals.merge(
-                        lot.ingredientId(),
-                        lot.quantityRemaining(),
-                        Double::sum
-                )
-        );
-
-        List<DashboardResponse.RestockSuggestion> result =
-                new ArrayList<>();
-
-        totals.forEach((id, amount) -> {
-
-            if (amount <=1200 &&List.of(
-                    "paneer",
-                    "bread",
-                    "milk",
-                    "tomatoes",
-                    "dosa-batter"
-            ).contains(id)) {
-
-                Ingredient ingredient = ingredients.get(id);
-
-                result.add(
-                        new DashboardResponse.RestockSuggestion(
-                                ingredient == null
-                                        ? id
-                                        : ingredient.name(),
-                                format(Math.max(500, 1500 - amount))
-                                        + " "
-                                        + ingredient.baseUnit(),
-                                "Usable stock is below the operating buffer"
-                        )
-                );
-            }
-        });
-
-        return result;
+        Ingredient ingredient = ingredients.get(id);
+        return ingredient == null ? id : ingredient.name();
     }
 
-    private String ingredientName(String id) {
-        return repository.ingredient(id)
-                .map(Ingredient::name)
-                .orElse(id);
+    private String format(BigDecimal value) {
+        return value.stripTrailingZeros().toPlainString();
     }
 
-    private String format(double value) {
-        return value == Math.rint(value)
-                ? String.valueOf((long) value)
-                : String.format(Locale.ROOT, "%.1f", value);
-    }
-
-    private String friendlyTime(Instant instant) {
-
-        Duration age = Duration.between(
-                instant,
-                Instant.now()
-        );
-
+    private String friendlyTime(Instant instant, Instant now) {
+        Duration age = Duration.between(instant, now);
         if (age.toMinutes() < 2) {
             return "Just now";
         }
-
         if (age.toHours() < 1) {
             return age.toMinutes() + " minutes ago";
         }
 
-        LocalDate date = instant
-                .atZone(ZoneId.systemDefault())
-                .toLocalDate();
-
-        if (date.equals(LocalDate.now())) {
-            return "Today, " +
-                    DateTimeFormatter
-                            .ofPattern("HH:mm")
-                            .withZone(ZoneId.systemDefault())
-                            .format(instant);
+        ZoneId zone = workspace.zoneId();
+        LocalDate date = instant.atZone(zone).toLocalDate();
+        if (date.equals(now.atZone(zone).toLocalDate())) {
+            return "Today, " + DateTimeFormatter
+                    .ofPattern("HH:mm")
+                    .withZone(zone)
+                    .format(instant);
         }
-
         return DateTimeFormatter
                 .ofPattern("d MMM, HH:mm")
-                .withZone(ZoneId.systemDefault())
+                .withZone(zone)
                 .format(instant);
     }
 }

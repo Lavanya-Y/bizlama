@@ -6,5 +6,5 @@ public record Ingredient (
     String baseUnit,
     boolean active
 ) {
-    
+
 }

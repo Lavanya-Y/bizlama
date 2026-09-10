@@ -53,7 +53,7 @@
         <div class="form-grid three-columns">
             <label>
                 Ingredient
-                <input list="known-ingredients" [ngModel]="ingredient()" (ngModelChange)="ingredient.set($event)"
+                <input list="known-ingredients" [ngModel]="ingredient()" (ngModelChange)="ingredientChanged($event)"
                     placeholder="Search or add an ingredient">
 
                 <datalist id="known-ingredients">
@@ -64,8 +64,17 @@
             </label>
 
             <label>
-                Quantity (kg)
+                Quantity
                 <input type="number" min="0.1" step="0.1" [ngModel]="quantity()" (ngModelChange)="quantity.set($event)">
+            </label>
+
+            <label>
+                Unit
+                <select [ngModel]="unit()" (ngModelChange)="unit.set($event)">
+                    <option value="g">grams (g)</option>
+                    <option value="ml">millilitres (ml)</option>
+                    <option value="each">count (each)</option>
+                </select>
             </label>
 
             <label>
@@ -100,6 +109,7 @@
                     <option value="all">All stock</option>
                     <option value="available">Available</option>
                     <option value="expiring">Expiring soon</option>
+                    <option value="quarantined">Expiry review</option>
                     <option value="expired">Expired</option>
                 </select>
             </label>
@@ -130,7 +140,11 @@
                             {{ lot.unit }}
                         </td>
                         <td>{{ lot.purchasedAt | date: 'mediumDate' }}</td>
-                        <td>{{ lot.expiresAt | date: 'mediumDate' }}</td>
+                        <td>
+                            {{ lot.expiresAt
+                                ? (lot.expiresAt | date: 'mediumDate')
+                                : 'Unresolved — quarantined' }}
+                        </td>
                         <td>
                             <span class="status-pill" [class.good]="lot.status === 'available'"
                                 [class.critical-pill]="lot.status === 'expired'">

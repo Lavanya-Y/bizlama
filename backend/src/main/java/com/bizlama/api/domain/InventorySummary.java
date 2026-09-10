@@ -5,5 +5,5 @@ public record InventorySummary (
     long activeLots,
     long expiringLots,
     long expiredLots) {
-    
+
 }

@@ -1,5 +1,8 @@
 package com.bizlama.api.store;
 
+import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
@@ -14,7 +17,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.bizlama.api.data.bigquery.AnalyticsPublisher;
+import com.bizlama.api.config.JdbcTimestamp;
+import com.bizlama.api.config.WorkspaceProperties;
 import com.bizlama.api.domain.ActivityEvent;
 import com.bizlama.api.domain.Dish;
 import com.bizlama.api.domain.Feedback;
@@ -31,19 +35,35 @@ import com.bizlama.api.domain.StockLot;
 import com.bizlama.api.domain.StockMovement;
 import com.bizlama.api.experiment.ExperimentResponse;
 import com.bizlama.api.experiment.ExperimentStatus;
+import com.bizlama.api.outbox.OutboxEvent;
+import com.bizlama.api.outbox.OutboxEventDraft;
+import com.bizlama.api.outbox.TransactionalOutboxService;
+import com.bizlama.api.orders.OrderTransitionService;
+import com.bizlama.api.quantity.CanonicalQuantity;
+import com.bizlama.api.quantity.IncompatibleUnitException;
+import com.bizlama.api.quantity.UnitConversionService;
 
 @Repository
 public class OperationalRepository {
 
     private final JdbcClient jdbc;
-    private final AnalyticsPublisher analytics;
+    private final TransactionalOutboxService outbox;
+    private final WorkspaceProperties workspace;
+    private final UnitConversionService units;
+    private final OrderTransitionService orderTransitions;
 
     public OperationalRepository(
             JdbcClient jdbc,
-            AnalyticsPublisher analytics) {
+            TransactionalOutboxService outbox,
+            WorkspaceProperties workspace,
+            UnitConversionService units,
+            OrderTransitionService orderTransitions) {
 
         this.jdbc = jdbc;
-        this.analytics = analytics;
+        this.outbox = outbox;
+        this.workspace = workspace;
+        this.units = units;
+        this.orderTransitions = orderTransitions;
     }
 
     // ============================================================
@@ -51,9 +71,10 @@ public class OperationalRepository {
     // ============================================================
 
     public List<Ingredient> ingredients() {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id, name, base_unit, active
                         FROM ingredients
+                        WHERE kitchen_id = :workspaceKitchen
                         ORDER BY name
                         """)
                 .query((rs, row) -> ingredient(rs,row))
@@ -61,54 +82,107 @@ public class OperationalRepository {
     }
 
     public Optional<Ingredient> ingredient(String id) {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id, name, base_unit, active
                         FROM ingredients
                         WHERE id = :id
+                          AND kitchen_id = :workspaceKitchen
                         """)
                 .param("id", id)
                 .query((rs, row) -> ingredient(rs,row))
                 .optional();
     }
 
+    @Transactional
     public Ingredient saveIngredient(Ingredient value) {
+        String canonicalUnit = units.canonicalUnit(value.baseUnit());
+        Ingredient existing = ingredient(value.id()).orElse(null);
+        if (existing != null
+                && !units.canonicalUnit(existing.baseUnit()).equals(canonicalUnit)
+                && hasHistoricalQuantities(value.id())) {
+            throw new IncompatibleUnitException(
+                    "Ingredient base dimension cannot change after recipes, inventory, "
+                            + "receipts, safety stock, or recommendations reference it."
+            );
+        }
 
-        int updated = jdbc.sql("""
+        Ingredient stored = new Ingredient(
+                value.id(),
+                value.name(),
+                canonicalUnit,
+                value.active()
+        );
+        int updated = scopedSql("""
                         UPDATE ingredients
                         SET name = :name,
                             base_unit = :unit,
                             active = :active
                         WHERE id = :id
+                          AND kitchen_id = :workspaceKitchen
                         """)
                 .params(Map.of(
-                        "id", value.id(),
-                        "name", value.name(),
-                        "unit", value.baseUnit(),
-                        "active", value.active()))
+                        "id", stored.id(),
+                        "name", stored.name(),
+                        "unit", stored.baseUnit(),
+                        "active", stored.active()))
                 .update();
 
         if (updated == 0) {
-            jdbc.sql("""
+            scopedSql("""
                             INSERT INTO ingredients
-                            (id, name, base_unit, active)
-                            VALUES (:id, :name, :unit, :active)
+                            (id, name, base_unit, active, kitchen_id)
+                            VALUES (:id, :name, :unit, :active, :workspaceKitchen)
                             """)
                     .params(Map.of(
-                            "id", value.id(),
-                            "name", value.name(),
-                            "unit", value.baseUnit(),
-                            "active", value.active()))
+                            "id", stored.id(),
+                            "name", stored.name(),
+                            "unit", stored.baseUnit(),
+                            "active", stored.active()))
                     .update();
         }
 
-        return value;
+        return stored;
+    }
+
+    private boolean hasHistoricalQuantities(String ingredientId) {
+        Long references = jdbc.sql("""
+                        SELECT
+                          (SELECT COUNT(*) FROM recipe_ingredients
+                           WHERE ingredient_id = :ingredient
+                             AND kitchen_id = :workspaceKitchen)
+                          + (SELECT COUNT(*) FROM stock_lots
+                             WHERE ingredient_id = :ingredient
+                               AND kitchen_id = :workspaceKitchen)
+                          + (SELECT COUNT(*) FROM stock_movements
+                             WHERE ingredient_id = :ingredient
+                               AND kitchen_id = :workspaceKitchen)
+                          + (SELECT COUNT(*) FROM receipt_items
+                             WHERE ingredient_id = :ingredient
+                               AND EXISTS (
+                                 SELECT 1
+                                 FROM receipt_imports receipt
+                                 WHERE receipt.id = receipt_items.receipt_id
+                                   AND receipt.kitchen_id = :workspaceKitchen))
+                          + (SELECT COUNT(*) FROM ingredient_safety_stock
+                             WHERE ingredient_id = :ingredient
+                               AND kitchen_id = :workspaceKitchen)
+                          + (SELECT COUNT(*) FROM recommendations
+                             WHERE ingredient_id = :ingredient
+                               AND kitchen_id = :workspaceKitchen)
+                        """)
+                .param("ingredient", ingredientId)
+                .param("workspaceKitchen", workspace.kitchenId())
+                .query(Long.class)
+                .single();
+        return references != null && references > 0;
     }
 
     public void deleteIngredient(String id) {
-        jdbc.sql("""
+        scopedSql("""
                         UPDATE ingredients
                         SET active = FALSE
                         WHERE id = :id
+                          AND kitchen_id = :workspaceKitchen
                         """)
                 .param("id", id)
                 .update();
@@ -119,10 +193,10 @@ public class OperationalRepository {
     // ============================================================
 
     public List<MenuCategory> menuCategories() {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id, name
                         FROM catalog_categories
-                        WHERE kitchen_id = 'kitchen-default'
+                        WHERE kitchen_id = :workspaceKitchen
                         ORDER BY name
                         """)
                 .query((rs, rowNum) ->
@@ -133,11 +207,11 @@ public class OperationalRepository {
     }
 
     public Optional<MenuCategory> menuCategory(String id) {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id, name
                         FROM catalog_categories
                         WHERE id = :id
-                          AND kitchen_id = 'kitchen-default'
+                          AND kitchen_id = :workspaceKitchen
                         """)
                 .param("id", id)
                 .query((rs, rowNum) ->
@@ -152,7 +226,7 @@ public class OperationalRepository {
     // ============================================================
 
     public List<Dish> dishes() {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT d.id,
                                d.name,
                                d.price,
@@ -163,7 +237,9 @@ public class OperationalRepository {
                         FROM dishes d
                         LEFT JOIN catalog_categories c
                             ON c.id = d.category_id
+                           AND c.kitchen_id = d.kitchen_id
                         WHERE d.active = TRUE
+                          AND d.kitchen_id = :workspaceKitchen
                         ORDER BY COALESCE(c.name, 'Other'), d.name
                         """)
                 .query((rs, row) -> dish(rs, row))
@@ -171,7 +247,7 @@ public class OperationalRepository {
     }
 
     public Optional<Dish> dish(String id) {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT d.id,
                                d.name,
                                d.price,
@@ -182,7 +258,9 @@ public class OperationalRepository {
                         FROM dishes d
                         LEFT JOIN catalog_categories c
                             ON c.id = d.category_id
+                           AND c.kitchen_id = d.kitchen_id
                         WHERE d.id = :id
+                          AND d.kitchen_id = :workspaceKitchen
                         """)
                 .param("id", id)
                 .query((rs, row) -> dish(rs, row))
@@ -191,13 +269,16 @@ public class OperationalRepository {
 
     public Dish saveDish(Dish value) {
 
-        int updated = jdbc.sql("""
+        requireWorkspaceCategory(value.categoryId());
+
+        int updated = scopedSql("""
                         UPDATE dishes
                         SET name = :name,
                             price = :price,
                             active = :active,
                             category_id = :category
                         WHERE id = :id
+                          AND kitchen_id = :workspaceKitchen
                         """)
                 .param("id", value.id())
                 .param("name", value.name())
@@ -207,11 +288,12 @@ public class OperationalRepository {
                 .update();
 
         if (updated == 0) {
-            jdbc.sql("""
+            scopedSql("""
                             INSERT INTO dishes
-                            (id, name, price, active_recipe_version_id, active, category_id)
-                            VALUES
-                            (:id, :name, :price, :recipe, :active, :category)
+                            (id, name, price, active_recipe_version_id, active,
+                             category_id, kitchen_id)
+                            VALUES (:id, :name, :price, :recipe, :active,
+                                    :category, :workspaceKitchen)
                             """)
                     .param("id", value.id())
                     .param("name", value.name())
@@ -226,10 +308,11 @@ public class OperationalRepository {
     }
 
     public void deleteDish(String id) {
-        jdbc.sql("""
+        scopedSql("""
                         UPDATE dishes
                         SET active = FALSE
                         WHERE id = :id
+                          AND kitchen_id = :workspaceKitchen
                         """)
                 .param("id", id)
                 .update();
@@ -240,10 +323,11 @@ public class OperationalRepository {
     // ============================================================
 
     public List<RecipeVersion> recipes() {
-        return jdbc.sql("""
-                        SELECT id
-                        FROM recipe_versions
-                        ORDER BY dish_id, version_number DESC
+        return scopedSql("""
+                        SELECT recipe.id
+                        FROM recipe_versions recipe
+                        WHERE recipe.kitchen_id = :workspaceKitchen
+                        ORDER BY recipe.dish_id, recipe.version_number DESC
                         """)
                 .query(String.class)
                 .list()
@@ -254,15 +338,25 @@ public class OperationalRepository {
     }
 
     public Optional<RecipeVersion> recipe(String id) {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id,
                                dish_id,
                                version_number,
+                               yield_quantity,
+                               yield_unit,
+                               yield_provenance,
                                change_reason,
                                created_at,
-                               active
+                               created_by,
+                               active,
+                               approved_by,
+                               approved_at,
+                               effective_at,
+                               superseded_at,
+                               superseded_by_version_id
                         FROM recipe_versions
                         WHERE id = :id
+                          AND kitchen_id = :workspaceKitchen
                         """)
                 .param("id", id)
                 .query((rs, rowNum) ->
@@ -272,33 +366,44 @@ public class OperationalRepository {
                                 rs.getInt("version_number"),
                                 recipeIngredients(rs.getString("id")),
                                 recipeSteps(rs.getString("id")),
+                                rs.getBigDecimal("yield_quantity"),
+                                rs.getString("yield_unit"),
+                                rs.getString("yield_provenance"),
                                 rs.getString("change_reason"),
                                 rs.getObject("created_at", OffsetDateTime.class).toInstant(),
-                                rs.getBoolean("active")))
+                                rs.getString("created_by"),
+                                rs.getBoolean("active"),
+                                rs.getString("approved_by"),
+                                instant(rs, "approved_at"),
+                                instant(rs, "effective_at"),
+                                instant(rs, "superseded_at"),
+                                rs.getString("superseded_by_version_id")))
                 .optional();
     }
 
     private List<RecipeVersion.RecipeIngredient> recipeIngredients(String id) {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT ingredient_id, quantity, unit
                         FROM recipe_ingredients
                         WHERE recipe_version_id = :id
+                          AND kitchen_id = :workspaceKitchen
                         ORDER BY ingredient_id
                         """)
                 .param("id", id)
                 .query((rs, rowNum) ->
                         new RecipeVersion.RecipeIngredient(
                                 rs.getString("ingredient_id"),
-                                rs.getDouble("quantity"),
+                                rs.getBigDecimal("quantity"),
                                 rs.getString("unit")))
                 .list();
     }
 
     private List<String> recipeSteps(String id) {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT instruction
                         FROM recipe_steps
                         WHERE recipe_version_id = :id
+                          AND kitchen_id = :workspaceKitchen
                         ORDER BY step_number
                         """)
                 .param("id", id)
@@ -308,10 +413,11 @@ public class OperationalRepository {
 
     public int nextRecipeVersion(String dishId) {
 
-        Integer current = jdbc.sql("""
+        Integer current = scopedSql("""
                         SELECT MAX(version_number)
                         FROM recipe_versions
                         WHERE dish_id = :dish
+                          AND kitchen_id = :workspaceKitchen
                         """)
                 .param("dish", dishId)
                 .query(Integer.class)
@@ -324,25 +430,36 @@ public class OperationalRepository {
     @Transactional
     public RecipeVersion saveRecipeProposal(RecipeVersion recipe) {
 
-        jdbc.sql("""
+        requireWorkspaceDish(recipe.dishId());
+        recipe.ingredients().forEach(item ->
+                requireWorkspaceIngredient(item.ingredientId()));
+
+        scopedSql("""
                         INSERT INTO recipe_versions
-                        (id, dish_id, version_number, change_reason, active, created_at)
+                        (id, dish_id, version_number, yield_quantity, yield_unit,
+                         change_reason, active, created_at, created_by, kitchen_id)
                         VALUES
-                        (:id, :dish, :version, :reason, FALSE, :created)
+                        (:id, :dish, :version, :yieldQuantity, :yieldUnit,
+                         :reason, FALSE, :created, :createdBy, :workspaceKitchen)
                         """)
                 .param("id", recipe.id())
                 .param("dish", recipe.dishId())
                 .param("version", recipe.versionNumber())
+                .param("yieldQuantity", recipe.yieldQuantity())
+                .param("yieldUnit", recipe.yieldUnit())
                 .param("reason", recipe.changeReason())
-                .param("created", recipe.createdAt())
+                .param("created", JdbcTimestamp.utc(recipe.createdAt()))
+                .param("createdBy", recipe.createdBy())
                 .update();
 
         for (RecipeVersion.RecipeIngredient item : recipe.ingredients()) {
-            jdbc.sql("""
+            scopedSql("""
                             INSERT INTO recipe_ingredients
-                            (recipe_version_id, ingredient_id, quantity, unit)
+                            (recipe_version_id, ingredient_id, quantity, unit,
+                             kitchen_id)
                             VALUES
-                            (:recipe, :ingredient, :quantity, :unit)
+                            (:recipe, :ingredient, :quantity, :unit,
+                             :workspaceKitchen)
                             """)
                     .param("recipe", recipe.id())
                     .param("ingredient", item.ingredientId())
@@ -352,11 +469,12 @@ public class OperationalRepository {
         }
 
         for (int index = 0; index < recipe.instructions().size(); index++) {
-            jdbc.sql("""
+            scopedSql("""
                             INSERT INTO recipe_steps
-                            (recipe_version_id, step_number, instruction)
+                            (recipe_version_id, step_number, instruction,
+                             kitchen_id)
                             VALUES
-                            (:recipe, :step, :instruction)
+                            (:recipe, :step, :instruction, :workspaceKitchen)
                             """)
                     .param("recipe", recipe.id())
                     .param("step", index + 1)
@@ -364,6 +482,14 @@ public class OperationalRepository {
                     .update();
         }
 
+        outbox.append(OutboxEventDraft.v1(
+                "RECIPE_VERSION_PROPOSED",
+                workspace.kitchenId(),
+                "recipe_version",
+                recipe.id(),
+                "recipe-proposed:" + recipe.id(),
+                recipe
+        ));
         addActivity(
                 "Recipe proposal",
                 "Recipe version " + recipe.versionNumber()
@@ -378,13 +504,17 @@ public class OperationalRepository {
             int preparationMinutes,
             RecipeVersion recipe) {
 
-        jdbc.sql("""
+        requireWorkspaceCategory(dish.categoryId());
+        recipe.ingredients().forEach(item ->
+                requireWorkspaceIngredient(item.ingredientId()));
+
+        scopedSql("""
                         INSERT INTO dishes
                         (id, name, price, active_recipe_version_id,
                          active, kitchen_id, category_id, preparation_minutes)
                         VALUES
                         (:id, :name, :price, NULL,
-                         TRUE, 'kitchen-default', :category, :minutes)
+                         TRUE, :workspaceKitchen, :category, :minutes)
                         """)
                 .param("id", dish.id())
                 .param("name", dish.name())
@@ -393,24 +523,37 @@ public class OperationalRepository {
                 .param("minutes", preparationMinutes)
                 .update();
 
-        jdbc.sql("""
+        scopedSql("""
                         INSERT INTO recipe_versions
-                        (id, dish_id, version_number, change_reason, active, created_at)
+                        (id, dish_id, version_number, yield_quantity, yield_unit,
+                         change_reason, active, active_dish_guard, created_at, created_by,
+                         approved_by, approved_at, effective_at, kitchen_id)
                         VALUES
-                        (:id, :dish, 1, :reason, TRUE, :created)
+                        (:id, :dish, 1, :yieldQuantity, :yieldUnit,
+                         :reason, TRUE, :dish, :created, :createdBy,
+                         :approvedBy, :approvedAt, :effectiveAt,
+                         :workspaceKitchen)
                         """)
                 .param("id", recipe.id())
                 .param("dish", dish.id())
+                .param("yieldQuantity", recipe.yieldQuantity())
+                .param("yieldUnit", recipe.yieldUnit())
                 .param("reason", recipe.changeReason())
-                .param("created", recipe.createdAt())
+                .param("created", JdbcTimestamp.utc(recipe.createdAt()))
+                .param("createdBy", recipe.createdBy())
+                .param("approvedBy", recipe.approvedBy())
+                .param("approvedAt", JdbcTimestamp.utc(recipe.approvedAt()))
+                .param("effectiveAt", JdbcTimestamp.utc(recipe.effectiveAt()))
                 .update();
 
         for (RecipeVersion.RecipeIngredient item : recipe.ingredients()) {
-            jdbc.sql("""
+            scopedSql("""
                             INSERT INTO recipe_ingredients
-                            (recipe_version_id, ingredient_id, quantity, unit)
+                            (recipe_version_id, ingredient_id, quantity, unit,
+                             kitchen_id)
                             VALUES
-                            (:recipe, :ingredient, :quantity, :unit)
+                            (:recipe, :ingredient, :quantity, :unit,
+                             :workspaceKitchen)
                             """)
                     .param("recipe", recipe.id())
                     .param("ingredient", item.ingredientId())
@@ -420,11 +563,12 @@ public class OperationalRepository {
         }
 
         for (int index = 0; index < recipe.instructions().size(); index++) {
-            jdbc.sql("""
+            scopedSql("""
                             INSERT INTO recipe_steps
-                            (recipe_version_id, step_number, instruction)
+                            (recipe_version_id, step_number, instruction,
+                             kitchen_id)
                             VALUES
-                            (:recipe, :step, :instruction)
+                            (:recipe, :step, :instruction, :workspaceKitchen)
                             """)
                     .param("recipe", recipe.id())
                     .param("step", index + 1)
@@ -432,15 +576,24 @@ public class OperationalRepository {
                     .update();
         }
 
-        jdbc.sql("""
+        scopedSql("""
                         UPDATE dishes
                         SET active_recipe_version_id = :recipe
                         WHERE id = :dish
+                          AND kitchen_id = :workspaceKitchen
                         """)
                 .param("recipe", recipe.id())
                 .param("dish", dish.id())
                 .update();
 
+        outbox.append(OutboxEventDraft.v1(
+                "RECIPE_VERSION_ACTIVATED",
+                workspace.kitchenId(),
+                "recipe_version",
+                recipe.id(),
+                "recipe-activated:" + recipe.id(),
+                recipe
+        ));
         addActivity(
                 "Menu",
                 "Created " + dish.name() + " with recipe version 1");
@@ -449,43 +602,107 @@ public class OperationalRepository {
     }
 
     @Transactional
-    public RecipeVersion activateRecipe(String recipeId) {
-
+    public RecipeVersion activateRecipe(
+            String recipeId,
+            String actor
+    ) {
+        if (actor == null || actor.isBlank()) {
+            throw new IllegalArgumentException("Approver is required.");
+        }
         RecipeVersion recipe = recipe(recipeId)
                 .orElseThrow(() ->
                         new IllegalArgumentException("Recipe version not found"));
-
-        jdbc.sql("""
-                        UPDATE recipe_versions
-                        SET active = FALSE
-                        WHERE dish_id = :dish
+        scopedSql("""
+                        SELECT id
+                        FROM dishes
+                        WHERE id = :dish
+                          AND kitchen_id = :workspaceKitchen
+                        FOR UPDATE
                         """)
+                .param("dish", recipe.dishId())
+                .query(String.class)
+                .optional()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Recipe dish was not found in this kitchen."
+                ));
+        recipe = recipe(recipeId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Recipe version not found after acquiring its dish lock."
+                ));
+        if (recipe.active()) {
+            return recipe;
+        }
+
+        Instant now = Instant.now();
+        scopedSql("""
+                        UPDATE recipe_versions
+                        SET active = FALSE,
+                            active_dish_guard = NULL,
+                            superseded_at = :now,
+                            superseded_by_version_id = :replacement
+                        WHERE dish_id = :dish
+                          AND kitchen_id = :workspaceKitchen
+                          AND active = TRUE
+                          AND id <> :replacement
+                        """)
+                .param("now", JdbcTimestamp.utc(now))
+                .param("replacement", recipeId)
                 .param("dish", recipe.dishId())
                 .update();
 
-        jdbc.sql("""
+        int activated = scopedSql("""
                         UPDATE recipe_versions
-                        SET active = TRUE
+                        SET active = TRUE,
+                            active_dish_guard = :dish,
+                            approved_by = :actor,
+                            approved_at = :now,
+                            effective_at = :now,
+                            superseded_at = NULL,
+                            superseded_by_version_id = NULL
                         WHERE id = :id
+                          AND dish_id = :dish
+                          AND kitchen_id = :workspaceKitchen
                         """)
+                .param("actor", actor)
+                .param("now", JdbcTimestamp.utc(now))
                 .param("id", recipeId)
+                .param("dish", recipe.dishId())
                 .update();
+        if (activated != 1) {
+            throw new IllegalStateException("Recipe activation failed.");
+        }
 
-        jdbc.sql("""
+        scopedSql("""
                         UPDATE dishes
                         SET active_recipe_version_id = :recipe
                         WHERE id = :dish
+                          AND kitchen_id = :workspaceKitchen
                         """)
                 .param("recipe", recipeId)
                 .param("dish", recipe.dishId())
                 .update();
 
+        RecipeVersion activatedRecipe = recipe(recipeId).orElseThrow();
+        outbox.append(new OutboxEventDraft(
+                null,
+                "RECIPE_VERSION_ACTIVATED",
+                1,
+                workspace.kitchenId(),
+                "recipe_version",
+                recipeId,
+                now,
+                recipeId,
+                null,
+                "recipe-activated:" + recipeId + ":" + now,
+                activatedRecipe,
+                Map.of("actor", actor)
+        ));
         addActivity(
                 "Recipe approval",
                 "Owner activated recipe version "
                         + recipe.versionNumber());
 
-        return recipe(recipeId).orElseThrow();
+        return activatedRecipe;
     }
 
     // ============================================================
@@ -493,7 +710,7 @@ public class OperationalRepository {
     // ============================================================
 
     public List<StockLot> stockLots() {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id,
                                ingredient_id,
                                quantity_remaining,
@@ -502,7 +719,11 @@ public class OperationalRepository {
                                expires_at,
                                source
                         FROM stock_lots
-                        WHERE quantity_remaining > 0
+                        WHERE kitchen_id = :workspaceKitchen
+                          AND location_id = :workspaceLocation
+                          AND status = 'AVAILABLE'
+                          AND quantity_remaining > 0
+                          AND expires_at >= CURRENT_DATE
                         ORDER BY expires_at
                         """)
                 .query(this::stockLot)
@@ -510,7 +731,7 @@ public class OperationalRepository {
     }
 
     public Optional<StockLot> firstAvailableLot(String ingredientId) {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id,
                                ingredient_id,
                                quantity_remaining,
@@ -519,8 +740,12 @@ public class OperationalRepository {
                                expires_at,
                                source
                         FROM stock_lots
-                        WHERE ingredient_id = :ingredient
+                        WHERE kitchen_id = :workspaceKitchen
+                          AND location_id = :workspaceLocation
+                          AND ingredient_id = :ingredient
+                          AND status = 'AVAILABLE'
                           AND quantity_remaining > 0
+                          AND expires_at >= CURRENT_DATE
                         ORDER BY expires_at
                         LIMIT 1
                         """)
@@ -529,121 +754,9 @@ public class OperationalRepository {
                 .optional();
     }
 
-    @Transactional
-    public StockLot addPurchase(StockLot lot) {
-
-        jdbc.sql("""
-                        INSERT INTO stock_lots
-                        (id, ingredient_id, quantity_remaining,
-                         unit, purchased_at, expires_at, source)
-                        VALUES
-                        (:id, :ingredient, :quantity,
-                         :unit, :purchased, :expires, :source)
-                        """)
-                .param("id", lot.id())
-                .param("ingredient", lot.ingredientId())
-                .param("quantity", lot.quantityRemaining())
-                .param("unit", lot.unit())
-                .param("purchased", lot.purchasedAt())
-                .param("expires", lot.expiresAt())
-                .param("source", lot.source())
-                .update();
-
-        recordMovement(
-                new StockMovement(
-                        UUID.randomUUID().toString(),
-                        lot.id(),
-                        lot.ingredientId(),
-                        StockMovement.MovementType.PURCHASE,
-                        lot.quantityRemaining(),
-                        lot.unit(),
-                        "purchase",
-                        lot.id(),
-                        Instant.now()));
-
-        return lot;
-    }
-
-    @Transactional
-    public void consume(
-            String ingredientId,
-            double quantity,
-            StockMovement.MovementType type,
-            String referenceType,
-            String referenceId) {
-
-        double remaining = quantity;
-
-        for (StockLot lot : stockLots().stream()
-                .filter(item -> item.ingredientId().equals(ingredientId))
-                .toList()) {
-
-            if (remaining <= 0) {
-                break;
-            }
-
-            double used = Math.min(
-                    remaining,
-                    lot.quantityRemaining());
-
-            jdbc.sql("""
-                            UPDATE stock_lots
-                            SET quantity_remaining =
-                                quantity_remaining - :used
-                            WHERE id = :id
-                            """)
-                    .param("used", used)
-                    .param("id", lot.id())
-                    .update();
-
-            recordMovement(
-                    new StockMovement(
-                            UUID.randomUUID().toString(),
-                            lot.id(),
-                            ingredientId,
-                            type,
-                            -used,
-                            lot.unit(),
-                            referenceType,
-                            referenceId,
-                            Instant.now()));
-
-            remaining -= used;
-        }
-
-        if (remaining > 0.001) {
-            throw new IllegalStateException(
-                    "Not enough stock for " + ingredientId);
-        }
-    }
-
-    public void recordMovement(StockMovement movement) {
-
-        jdbc.sql("""
-                        INSERT INTO stock_movements
-                        (id, stock_lot_id, ingredient_id,
-                         movement_type, quantity_change, unit,
-                         reference_type, reference_id, occurred_at)
-                        VALUES
-                        (:id, :lot, :ingredient,
-                         :type, :quantity, :unit,
-                         :referenceType, :referenceId, :occurred)
-                        """)
-                .param("id", movement.id())
-                .param("lot", movement.stockLotId())
-                .param("ingredient", movement.ingredientId())
-                .param("type", movement.type().name())
-                .param("quantity", movement.quantityChange())
-                .param("unit", movement.unit())
-                .param("referenceType", movement.referenceType())
-                .param("referenceId", movement.referenceId())
-                .param("occurred", movement.occurredAt())
-                .update();
-    }
-
     public List<StockMovement> stockMovements() {
 
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id,
                                stock_lot_id,
                                ingredient_id,
@@ -654,6 +767,8 @@ public class OperationalRepository {
                                reference_id,
                                occurred_at
                         FROM stock_movements
+                        WHERE kitchen_id = :workspaceKitchen
+                          AND location_id = :workspaceLocation
                         ORDER BY occurred_at DESC
                         """)
                 .query((rs, rowNum) ->
@@ -663,7 +778,7 @@ public class OperationalRepository {
                                 rs.getString(3),
                                 StockMovement.MovementType.valueOf(
                                         rs.getString(4)),
-                                rs.getDouble(5),
+                                rs.getBigDecimal(5),
                                 rs.getString(6),
                                 rs.getString(7),
                                 rs.getString(8),
@@ -691,7 +806,7 @@ public class OperationalRepository {
         LocalDate today = LocalDate.now();
         LocalDate soon = today.plusDays(7);
 
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT l.id,
                                l.ingredient_id,
                                i.name,
@@ -701,6 +816,9 @@ public class OperationalRepository {
                                l.expires_at,
                                l.source,
                                CASE
+                                   WHEN l.status = 'QUARANTINED'
+                                     OR l.expires_at IS NULL
+                                       THEN 'quarantined'
                                    WHEN l.expires_at < :today
                                        THEN 'expired'
                                    WHEN l.expires_at <= :soon
@@ -710,7 +828,10 @@ public class OperationalRepository {
                         FROM stock_lots l
                         JOIN ingredients i
                             ON i.id = l.ingredient_id
-                        WHERE l.quantity_remaining > 0
+                           AND i.kitchen_id = l.kitchen_id
+                        WHERE l.kitchen_id = :workspaceKitchen
+                          AND l.location_id = :workspaceLocation
+                          AND l.quantity_remaining > 0
                           AND (
                               :query = ''
                               OR LOWER(i.name) LIKE :pattern
@@ -719,16 +840,26 @@ public class OperationalRepository {
                           AND (
                               :status = 'all'
                               OR (
+                                  :status = 'quarantined'
+                                  AND (
+                                      l.status = 'QUARANTINED'
+                                      OR l.expires_at IS NULL
+                                  )
+                              )
+                              OR (
                                   :status = 'expired'
+                                  AND l.status = 'AVAILABLE'
                                   AND l.expires_at < :today
                               )
                               OR (
                                   :status = 'expiring'
+                                  AND l.status = 'AVAILABLE'
                                   AND l.expires_at >= :today
                                   AND l.expires_at <= :soon
                               )
                               OR (
                                   :status = 'available'
+                                  AND l.status = 'AVAILABLE'
                                   AND l.expires_at > :soon
                               )
                           )
@@ -747,7 +878,7 @@ public class OperationalRepository {
                                 rs.getString(1),
                                 rs.getString(2),
                                 rs.getString(3),
-                                rs.getDouble(4),
+                                rs.getBigDecimal(4),
                                 rs.getString(5),
                                 rs.getObject(6, LocalDate.class),
                                 rs.getObject(7, LocalDate.class),
@@ -767,12 +898,15 @@ public class OperationalRepository {
         LocalDate today = LocalDate.now();
         LocalDate soon = today.plusDays(7);
 
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT COUNT(*)
                         FROM stock_lots l
                         JOIN ingredients i
                             ON i.id = l.ingredient_id
-                        WHERE l.quantity_remaining > 0
+                           AND i.kitchen_id = l.kitchen_id
+                        WHERE l.kitchen_id = :workspaceKitchen
+                          AND l.location_id = :workspaceLocation
+                          AND l.quantity_remaining > 0
                           AND (
                               :query = ''
                               OR LOWER(i.name) LIKE :pattern
@@ -781,16 +915,26 @@ public class OperationalRepository {
                           AND (
                               :status = 'all'
                               OR (
+                                  :status = 'quarantined'
+                                  AND (
+                                      l.status = 'QUARANTINED'
+                                      OR l.expires_at IS NULL
+                                  )
+                              )
+                              OR (
                                   :status = 'expired'
+                                  AND l.status = 'AVAILABLE'
                                   AND l.expires_at < :today
                               )
                               OR (
                                   :status = 'expiring'
+                                  AND l.status = 'AVAILABLE'
                                   AND l.expires_at >= :today
                                   AND l.expires_at <= :soon
                               )
                               OR (
                                   :status = 'available'
+                                  AND l.status = 'AVAILABLE'
                                   AND l.expires_at > :soon
                               )
                           )
@@ -809,27 +953,33 @@ public class OperationalRepository {
         LocalDate today = LocalDate.now();
         LocalDate soon = today.plusDays(7);
 
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT
-                            COUNT(DISTINCT ingredient_id),
-                            COUNT(*),
-                            COALESCE(SUM(
-                                CASE
-                                    WHEN expires_at >= :today
-                                     AND expires_at <= :soon
-                                    THEN 1
-                                    ELSE 0
-                                END
-                            ), 0),
-                            COALESCE(SUM(
-                                CASE
-                                    WHEN expires_at < :today
-                                    THEN 1
-                                    ELSE 0
-                                END
-                            ), 0)
+                            COUNT(DISTINCT CASE
+                                WHEN status = 'AVAILABLE'
+                                 AND expires_at >= :today
+                                THEN ingredient_id
+                            END),
+                            COALESCE(SUM(CASE
+                                WHEN status = 'AVAILABLE'
+                                 AND expires_at >= :today
+                                THEN 1 ELSE 0
+                            END), 0),
+                            COALESCE(SUM(CASE
+                                WHEN status = 'AVAILABLE'
+                                 AND expires_at >= :today
+                                 AND expires_at <= :soon
+                                THEN 1 ELSE 0
+                            END), 0),
+                            COALESCE(SUM(CASE
+                                WHEN status = 'AVAILABLE'
+                                 AND expires_at < :today
+                                THEN 1 ELSE 0
+                            END), 0)
                         FROM stock_lots
-                        WHERE quantity_remaining > 0
+                        WHERE kitchen_id = :workspaceKitchen
+                          AND location_id = :workspaceLocation
+                          AND quantity_remaining > 0
                         """)
                 .param("today", today)
                 .param("soon", soon)
@@ -847,9 +997,11 @@ public class OperationalRepository {
     // ============================================================
 
     public List<Order> orders() {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id, total, status, created_at
                         FROM customer_orders
+                        WHERE kitchen_id = :workspaceKitchen
+                          AND location_id = :workspaceLocation
                         ORDER BY created_at DESC
                         """)
                 .query((rs, rowNum) ->
@@ -864,10 +1016,12 @@ public class OperationalRepository {
     }
 
     public Optional<Order> order(String id) {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id, total, status, created_at
                         FROM customer_orders
                         WHERE id = :id
+                          AND kitchen_id = :workspaceKitchen
+                          AND location_id = :workspaceLocation
                         """)
                 .param("id", id)
                 .query((rs, rowNum) ->
@@ -893,7 +1047,7 @@ public class OperationalRepository {
         String normalizedStatus =
                 status == null ? "ALL" : status.trim().toUpperCase();
 
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT o.id,
                                o.total,
                                o.status,
@@ -902,7 +1056,9 @@ public class OperationalRepository {
                         FROM customer_orders o
                         LEFT JOIN order_items oi
                             ON oi.order_id = o.id
-                        WHERE (
+                        WHERE o.kitchen_id = :workspaceKitchen
+                          AND o.location_id = :workspaceLocation
+                          AND (
                             :query = ''
                             OR LOWER(o.id) LIKE :pattern
                         )
@@ -938,10 +1094,12 @@ public class OperationalRepository {
         String normalizedStatus =
                 status == null ? "ALL" : status.trim().toUpperCase();
 
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT COUNT(*)
                         FROM customer_orders
-                        WHERE (
+                        WHERE kitchen_id = :workspaceKitchen
+                          AND location_id = :workspaceLocation
+                          AND (
                             :query = ''
                             OR LOWER(id) LIKE :pattern
                         )
@@ -958,27 +1116,29 @@ public class OperationalRepository {
     }
 
     public OrderSummary orderSummary() {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT
                             SUM(CASE
                                 WHEN status IN ('QUEUED', 'PREPARING')
                                 THEN 1 ELSE 0 END),
 
                             SUM(CASE
-                                WHEN status = 'READY'
+                                WHEN status = 'DONE'
                                 THEN 1 ELSE 0 END),
 
                             SUM(CASE
-                                WHEN status = 'COMPLETED'
-                                 AND CAST(created_at AS DATE) = CURRENT_DATE
+                                WHEN status = 'DONE'
+                                 AND CAST(updated_at AS DATE) = CURRENT_DATE
                                 THEN 1 ELSE 0 END),
 
                             COALESCE(SUM(CASE
-                                WHEN status = 'CANCELLED'
-                                 AND CAST(created_at AS DATE) = CURRENT_DATE
+                                WHEN status = 'DONE'
+                                 AND CAST(updated_at AS DATE) = CURRENT_DATE
                                 THEN total ELSE 0 END), 0)
 
                         FROM customer_orders
+                        WHERE kitchen_id = :workspaceKitchen
+                          AND location_id = :workspaceLocation
                         """)
                 .query((rs, rowNum) ->
                         new OrderSummary(
@@ -994,32 +1154,26 @@ public class OperationalRepository {
             String id,
             Order.Status status) {
 
-        int changed = jdbc.sql("""
-                        UPDATE customer_orders
-                        SET status = :status,
-                            updated_at = :now
-                        WHERE id = :id
-                        """)
-                .param("status", status.name())
-                .param("now", Instant.now())
-                .param("id", id)
-                .update();
+        return updateOrderStatus(id, status, "order-api");
+    }
 
-        if (changed == 0) {
-            throw new IllegalArgumentException("Order not found");
-        }
+    @Transactional
+    public Order updateOrderStatus(
+            String id,
+            Order.Status status,
+            String actor) {
 
-        jdbc.sql("""
-                        INSERT INTO order_status_history
-                        (id, order_id, status, changed_at)
-                        VALUES
-                        (:id, :order, :status, :changed)
-                        """)
-                .param("id", UUID.randomUUID().toString())
-                .param("order", id)
-                .param("status", status.name())
-                .param("changed", Instant.now())
-                .update();
+        Instant changedAt = Instant.now();
+        orderTransitions.transition(
+                workspace.kitchenId(),
+                workspace.locationId(),
+                id,
+                status,
+                changedAt,
+                actor,
+                "Advanced through the operational order API.",
+                null
+        );
 
         addActivity(
                 "Order",
@@ -1030,52 +1184,76 @@ public class OperationalRepository {
     }
 
     private List<Order.OrderItem> orderItems(String id) {
-        return jdbc.sql("""
-                        SELECT dish_id, quantity, unit_price
-                        FROM order_items
-                        WHERE order_id = :id
-                        ORDER BY line_number
+        return scopedSql("""
+                        SELECT item.dish_id, item.recipe_version_id,
+                               item.quantity, item.unit_price
+                        FROM order_items item
+                        JOIN customer_orders orders ON orders.id = item.order_id
+                        WHERE item.order_id = :id
+                          AND orders.kitchen_id = :workspaceKitchen
+                          AND orders.location_id = :workspaceLocation
+                        ORDER BY item.line_number
                         """)
                 .param("id", id)
                 .query((rs, rowNum) ->
                         new Order.OrderItem(
                                 rs.getString(1),
-                                rs.getInt(2),
-                                rs.getBigDecimal(3)))
+                                rs.getString(2),
+                                rs.getInt(3),
+                                rs.getBigDecimal(4)))
                 .list();
     }
 
     @Transactional
     public Order saveOrder(Order order) {
 
+        order.items().forEach(item ->
+                requireWorkspaceRecipeForDish(
+                        item.recipeVersionId(),
+                        item.dishId()
+                ));
+
         jdbc.sql("""
                         INSERT INTO customer_orders
-                        (id, total, status, created_at)
-                        VALUES
-                        (:id, :total, :status, :created)
+                        (id, total, status, created_at, required_at,
+                         kitchen_id, location_id)
+                        VALUES (:id, :total, :status, :created, :created,
+                                :kitchen, :location)
                         """)
                 .param("id", order.id())
                 .param("total", order.total())
                 .param("status", order.status().name())
-                .param("created", order.createdAt())
+                .param("created", JdbcTimestamp.utc(order.createdAt()))
+                .param("kitchen", workspace.kitchenId())
+                .param("location", workspace.locationId())
                 .update();
 
         for (int index = 0; index < order.items().size(); index++) {
 
             Order.OrderItem item = order.items().get(index);
 
-            jdbc.sql("""
+            int inserted = scopedSql("""
                             INSERT INTO order_items
-                            (order_id, line_number, dish_id, quantity, unit_price)
-                            VALUES
-                            (:orderId, :line, :dish, :quantity, :price)
+                            (order_id, line_number, dish_id, recipe_version_id,
+                             quantity, unit_price)
+                            SELECT orders.id, :line, :dish, :recipe, :quantity, :price
+                            FROM customer_orders orders
+                            WHERE orders.id = :orderId
+                              AND orders.kitchen_id = :workspaceKitchen
+                              AND orders.location_id = :workspaceLocation
                             """)
                     .param("orderId", order.id())
                     .param("line", index + 1)
                     .param("dish", item.dishId())
+                    .param("recipe", item.recipeVersionId())
                     .param("quantity", item.quantity())
                     .param("price", item.unitPrice())
                     .update();
+            if (inserted != 1) {
+                throw new IllegalStateException(
+                        "Order left this workspace before its lines were recorded."
+                );
+            }
         }
 
         int totalItems = order.items()
@@ -1083,6 +1261,22 @@ public class OperationalRepository {
                 .mapToInt(Order.OrderItem::quantity)
                 .sum();
 
+        OutboxEvent accepted = outbox.append(new OutboxEventDraft(
+                null,
+                "ORDER_ACCEPTED",
+                1,
+                workspace.kitchenId(),
+                "order",
+                order.id(),
+                order.createdAt(),
+                order.id(),
+                null,
+                "order-accepted:" + order.id(),
+                order,
+                Map.of("component", "order-service")
+        ));
+
+        appendOrderIngredientDemandEvents(order, accepted.eventId());
         addActivity(
                 "Order",
                 "Created " + order.id()
@@ -1091,9 +1285,139 @@ public class OperationalRepository {
         return order;
     }
 
+    private void appendOrderIngredientDemandEvents(
+            Order order,
+            String causationId
+    ) {
+        for (int index = 0; index < order.items().size(); index++) {
+            Order.OrderItem item = order.items().get(index);
+            int lineNumber = index + 1;
+            RecipeVersion recipe = recipe(item.recipeVersionId())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Accepted order recipe version disappeared: "
+                                    + item.recipeVersionId()
+                    ));
+            if (recipe.yieldQuantity() == null
+                    || recipe.yieldQuantity().signum() <= 0) {
+                throw new IllegalStateException(
+                        "Accepted recipe yield must be a positive count."
+                );
+            }
+            CanonicalQuantity canonicalYield;
+            try {
+                canonicalYield = units.convert(
+                        recipe.yieldQuantity(),
+                        recipe.yieldUnit(),
+                        "each"
+                );
+            } catch (IncompatibleUnitException error) {
+                throw new IllegalStateException(
+                        "Accepted recipe yield must use a count unit.",
+                        error
+                );
+            }
+
+            for (RecipeVersion.RecipeIngredient ingredient
+                    : recipe.ingredients()) {
+                Ingredient catalogIngredient = ingredient(ingredient.ingredientId())
+                        .orElseThrow(() -> new IllegalStateException(
+                                "Accepted recipe ingredient is outside this kitchen: "
+                                        + ingredient.ingredientId()
+                        ));
+                CanonicalQuantity canonicalRecipeQuantity =
+                        units.toIngredientBase(
+                                catalogIngredient,
+                                ingredient.quantity(),
+                                ingredient.unit()
+                        );
+                BigDecimal canonicalDemand = canonicalRecipeQuantity.quantity()
+                        .multiply(
+                                BigDecimal.valueOf(item.quantity()),
+                                MathContext.DECIMAL128
+                        )
+                        .divide(
+                                canonicalYield.quantity(),
+                                MathContext.DECIMAL128
+                        )
+                        .setScale(6, RoundingMode.HALF_UP)
+                        .stripTrailingZeros();
+                String entityId = order.id() + ":" + lineNumber + ":"
+                        + ingredient.ingredientId();
+                outbox.append(new OutboxEventDraft(
+                        null,
+                        "ORDER_INGREDIENT_DEMAND",
+                        1,
+                        workspace.kitchenId(),
+                        "order_ingredient_demand",
+                        entityId,
+                        order.createdAt(),
+                        order.id(),
+                        causationId,
+                        "order-ingredient-demand:" + entityId,
+                        new OrderIngredientDemandPayload(
+                                order.id(),
+                                lineNumber,
+                                item.dishId(),
+                                item.recipeVersionId(),
+                                workspace.locationId(),
+                                item.quantity(),
+                                ingredient.ingredientId(),
+                                ingredient.quantity(),
+                                ingredient.unit(),
+                                recipe.yieldQuantity(),
+                                recipe.yieldUnit(),
+                                canonicalDemand,
+                                canonicalRecipeQuantity.unit(),
+                                order.createdAt()
+                        ),
+                        Map.of("component", "order-service")
+                ));
+            }
+        }
+    }
+
+    private record OrderIngredientDemandPayload(
+            String orderId,
+            int lineNumber,
+            String dishId,
+            String recipeVersionId,
+            String locationId,
+            int orderedQuantity,
+            String ingredientId,
+            BigDecimal recipeIngredientQuantity,
+            String recipeIngredientUnit,
+            BigDecimal recipeYieldQuantity,
+            String recipeYieldUnit,
+            BigDecimal canonicalDemand,
+            String canonicalUnit,
+            Instant requiredAt
+    ) {
+    }
+
     // ============================================================
     // FEEDBACK
     // ============================================================
+
+    public Optional<Feedback> feedbackById(String id) {
+        return scopedSql("""
+                        SELECT feedback.id, feedback.recipe_id,
+                               feedback.feedback_text, feedback.rating,
+                               feedback.occurred_at, feedback.source
+                        FROM feedback
+                        WHERE feedback.id = :id
+                          AND feedback.kitchen_id = :workspaceKitchen
+                        """)
+                .param("id", id)
+                .query((rs, rowNum) ->
+                        new Feedback(
+                                rs.getString(1),
+                                rs.getString(2),
+                                rs.getString(3),
+                                rs.getInt(4),
+                                rs.getObject(5, LocalDate.class),
+                                rs.getString(6)))
+                .optional();
+    }
 
     public List<Feedback> feedback(String recipeId) {
 
@@ -1101,22 +1425,26 @@ public class OperationalRepository {
 
         if (recipeId == null) {
             sql = """
-                    SELECT id, recipe_id, feedback_text,
-                           rating, occurred_at, source
+                    SELECT feedback.id, feedback.recipe_id,
+                           feedback.feedback_text, feedback.rating,
+                           feedback.occurred_at, feedback.source
                     FROM feedback
-                    ORDER BY occurred_at DESC
+                    WHERE feedback.kitchen_id = :workspaceKitchen
+                    ORDER BY feedback.occurred_at DESC
                     """;
         } else {
             sql = """
-                    SELECT id, recipe_id, feedback_text,
-                           rating, occurred_at, source
+                    SELECT feedback.id, feedback.recipe_id,
+                           feedback.feedback_text, feedback.rating,
+                           feedback.occurred_at, feedback.source
                     FROM feedback
-                    WHERE recipe_id = :recipe
-                    ORDER BY occurred_at DESC
+                    WHERE feedback.recipe_id = :recipe
+                      AND feedback.kitchen_id = :workspaceKitchen
+                    ORDER BY feedback.occurred_at DESC
                     """;
         }
 
-        var query = jdbc.sql(sql);
+        var query = scopedSql(sql);
 
         if (recipeId != null) {
             query.param("recipe", recipeId);
@@ -1133,15 +1461,24 @@ public class OperationalRepository {
                 .list();
     }
 
+    @Transactional
     public Feedback saveFeedback(Feedback value) {
 
-        jdbc.sql("""
+        int inserted = scopedSql("""
                         INSERT INTO feedback
                         (id, recipe_id, feedback_text,
-                         rating, occurred_at, source)
-                        VALUES
-                        (:id, :recipe, :text,
-                         :rating, :occurred, :source)
+                         rating, occurred_at, source, kitchen_id)
+                        SELECT :id, recipe.id, :text,
+                               :rating, :occurred, :source, :workspaceKitchen
+                        FROM recipe_versions recipe
+                        JOIN dishes dish
+                          ON dish.id = recipe.dish_id
+                         AND dish.kitchen_id = recipe.kitchen_id
+                        WHERE recipe.id = :recipe
+                          AND recipe.kitchen_id = :workspaceKitchen
+                          AND recipe.active = TRUE
+                          AND dish.active = TRUE
+                          AND dish.active_recipe_version_id = recipe.id
                         """)
                 .param("id", value.id())
                 .param("recipe", value.recipeId())
@@ -1150,6 +1487,11 @@ public class OperationalRepository {
                 .param("occurred", value.occurredAt())
                 .param("source", value.source())
                 .update();
+        if (inserted != 1) {
+            throw new IllegalArgumentException(
+                    "Recipe version was not found in this kitchen."
+            );
+        }
 
         addActivity(
                 "Feedback",
@@ -1159,9 +1501,10 @@ public class OperationalRepository {
     }
 
     public void deleteFeedback(String id) {
-        jdbc.sql("""
+        scopedSql("""
                         DELETE FROM feedback
                         WHERE id = :id
+                          AND kitchen_id = :workspaceKitchen
                         """)
                 .param("id", id)
                 .update();
@@ -1172,9 +1515,11 @@ public class OperationalRepository {
     // ============================================================
 
     public List<ActivityEvent> activities() {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id, event_type, description, occurred_at
                         FROM activity_events
+                        WHERE kitchen_id = :workspaceKitchen
+                          AND location_id = :workspaceLocation
                         ORDER BY occurred_at DESC
                         LIMIT 8
                         """)
@@ -1188,6 +1533,7 @@ public class OperationalRepository {
                 .list();
     }
 
+    @Transactional
     public ActivityEvent addActivity(
             String type,
             String description) {
@@ -1198,23 +1544,37 @@ public class OperationalRepository {
                 description,
                 Instant.now());
 
-        jdbc.sql("""
+        scopedSql("""
                         INSERT INTO activity_events
-                        (id, event_type, description, occurred_at)
+                        (id, event_type, description, occurred_at,
+                         kitchen_id, location_id)
                         VALUES
-                        (:id, :type, :description, :occurred)
+                        (:id, :type, :description, :occurred,
+                         :workspaceKitchen, :workspaceLocation)
                         """)
                 .param("id", value.id())
                 .param("type", type)
                 .param("description", description)
-                .param("occurred", value.occurredAt())
+                .param("occurred", JdbcTimestamp.utc(value.occurredAt()))
                 .update();
 
-        analytics.publish(
+        outbox.append(new OutboxEventDraft(
                 value.id(),
-                type,
-                Map.of("description", description),
-                value.occurredAt());
+                "ACTIVITY_RECORDED",
+                1,
+                workspace.kitchenId(),
+                "activity",
+                value.id(),
+                value.occurredAt(),
+                value.id(),
+                null,
+                "activity:" + value.id(),
+                Map.of(
+                        "activityType", type,
+                        "description", description
+                ),
+                Map.of("component", "operational-api")
+        ));
 
         return value;
     }
@@ -1231,15 +1591,17 @@ public class OperationalRepository {
             String decision,
             String explanation) {
 
-        jdbc.sql("""
+        scopedSql("""
                         INSERT INTO ai_actions
                         (id, action_type, original_input,
                          normalized_item_id, confidence,
-                         decision, explanation, occurred_at)
+                         decision, explanation, occurred_at,
+                         kitchen_id, location_id)
                         VALUES
                         (:id, :type, :input,
                          :item, :confidence,
-                         :decision, :explanation, :occurred)
+                         :decision, :explanation, :occurred,
+                         :workspaceKitchen, :workspaceLocation)
                         """)
                 .param("id", UUID.randomUUID().toString())
                 .param("type", type)
@@ -1248,7 +1610,7 @@ public class OperationalRepository {
                 .param("confidence", confidence)
                 .param("decision", decision)
                 .param("explanation", explanation)
-                .param("occurred", Instant.now())
+                .param("occurred", JdbcTimestamp.utc(Instant.now()))
                 .update();
     }
 
@@ -1257,7 +1619,7 @@ public class OperationalRepository {
     // ============================================================
 
     public List<AliasMatch> aliases() {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT a.alias_normalized,
                                a.ingredient_id,
                                i.name,
@@ -1266,6 +1628,8 @@ public class OperationalRepository {
                         FROM ingredient_aliases a
                         JOIN ingredients i
                             ON i.id = a.ingredient_id
+                           AND i.kitchen_id = a.kitchen_id
+                        WHERE a.kitchen_id = :workspaceKitchen
                         """)
                 .query((rs, rowNum) ->
                         new AliasMatch(
@@ -1281,65 +1645,14 @@ public class OperationalRepository {
     // RECEIPTS
     // ============================================================
 
-    @Transactional
-    public ReceiptImport saveReceipt(ReceiptImport receipt) {
-
-        jdbc.sql("""
-                        INSERT INTO receipt_imports
-                        (id, original_filename, object_uri,
-                         status, merchant, purchase_date,
-                         total, created_at)
-                        VALUES
-                        (:id, :filename, :uri,
-                         :status, :merchant, :date,
-                         :total, :created)
-                        """)
-                .param("id", receipt.id())
-                .param("filename", receipt.originalFilename())
-                .param("uri", receipt.objectUri())
-                .param("status", receipt.status().name())
-                .param("merchant", receipt.merchant())
-                .param("date", receipt.purchaseDate())
-                .param("total", receipt.total())
-                .param("created", receipt.createdAt())
-                .update();
-
-        for (ReceiptImport.ReceiptItem item : receipt.items()) {
-
-            jdbc.sql("""
-                            INSERT INTO receipt_items
-                            (id, receipt_id, raw_name,
-                             ingredient_id, canonical_name,
-                             quantity, unit, unit_price,
-                             confidence, selected)
-                            VALUES
-                            (:id, :receipt, :raw,
-                             :ingredient, :canonical,
-                             :quantity, :unit, :price,
-                             :confidence, :selected)
-                            """)
-                    .param("id", item.id())
-                    .param("receipt", receipt.id())
-                    .param("raw", item.rawName())
-                    .param("ingredient", item.ingredientId())
-                    .param("canonical", item.canonicalName())
-                    .param("quantity", item.quantity())
-                    .param("unit", item.unit())
-                    .param("price", item.unitPrice())
-                    .param("confidence", item.confidence())
-                    .param("selected", item.selected())
-                    .update();
-        }
-
-        return receipt;
-    }
-
     public List<ReceiptImport> receipts() {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id, original_filename, object_uri,
                                status, merchant, purchase_date,
                                total, created_at
                         FROM receipt_imports
+                        WHERE kitchen_id = :workspaceKitchen
+                          AND location_id = :workspaceLocation
                         ORDER BY created_at DESC
                         """)
                 .query((rs, rowNum) -> receipt(rs))
@@ -1347,74 +1660,18 @@ public class OperationalRepository {
     }
 
     public Optional<ReceiptImport> receipt(String id) {
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id, original_filename, object_uri,
                                status, merchant, purchase_date,
                                total, created_at
                         FROM receipt_imports
                         WHERE id = :id
+                          AND kitchen_id = :workspaceKitchen
+                          AND location_id = :workspaceLocation
                         """)
                 .param("id", id)
                 .query((rs, rowNum) -> receipt(rs))
                 .optional();
-    }
-
-    @Transactional
-    public void replaceReceiptItems(
-            String receiptId,
-            List<ReceiptImport.ReceiptItem> items) {
-
-        jdbc.sql("""
-                        DELETE FROM receipt_items
-                        WHERE receipt_id = :id
-                        """)
-                .param("id", receiptId)
-                .update();
-
-        for (ReceiptImport.ReceiptItem item : items) {
-
-            jdbc.sql("""
-                            INSERT INTO receipt_items
-                            (id, receipt_id, raw_name,
-                             ingredient_id, canonical_name,
-                             quantity, unit, unit_price,
-                             confidence, selected)
-                            VALUES
-                            (:id, :receipt, :raw,
-                             :ingredient, :canonical,
-                             :quantity, :unit, :price,
-                             :confidence, :selected)
-                            """)
-                    .param("id", item.id())
-                    .param("receipt", receiptId)
-                    .param("raw", item.rawName())
-                    .param("ingredient", item.ingredientId())
-                    .param("canonical", item.canonicalName())
-                    .param("quantity", item.quantity())
-                    .param("unit", item.unit())
-                    .param("price", item.unitPrice())
-                    .param("confidence", item.confidence())
-                    .param("selected", item.selected())
-                    .update();
-        }
-    }
-
-    @Transactional
-    public void confirmReceipt(String id) {
-
-        jdbc.sql("""
-                        UPDATE receipt_imports
-                        SET status = 'CONFIRMED',
-                            confirmed_at = :now
-                        WHERE id = :id
-                        """)
-                .param("now", Instant.now())
-                .param("id", id)
-                .update();
-
-        addActivity(
-                "Receipt",
-                "Confirmed receipt " + id);
     }
 
     // ============================================================
@@ -1425,7 +1682,7 @@ public class OperationalRepository {
 
         String id = experimentId(reference);
 
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT d.name,
                                e.theme,
                                e.theme_count,
@@ -1435,11 +1692,14 @@ public class OperationalRepository {
                                e.proposed_value,
                                e.value_unit,
                                e.test_duration_days,
+                               e.approved_at,
                                e.status
                         FROM recipe_experiments e
                         JOIN dishes d
                             ON d.id = e.dish_id
+                           AND d.kitchen_id = e.kitchen_id
                         WHERE e.id = :id
+                          AND e.kitchen_id = :workspaceKitchen
                         """)
                 .param("id", id)
                 .query((rs, rowNum) ->
@@ -1453,8 +1713,9 @@ public class OperationalRepository {
                                 rs.getBigDecimal(7),
                                 rs.getString(8),
                                 rs.getInt(9),
+                                instant(rs, "approved_at"),
                                 ExperimentStatus.valueOf(
-                                        rs.getString(10))))
+                                        rs.getString(11))))
                 .optional()
                 .orElseThrow(() ->
                         new IllegalArgumentException("Experiment not found"));
@@ -1463,17 +1724,57 @@ public class OperationalRepository {
     @Transactional
     public void approveExperiment(String reference) {
 
-        String id = experimentId(reference);
+        approveExperiment(reference, "owner");
+    }
 
-        jdbc.sql("""
+    @Transactional
+    public void approveExperiment(String reference, String actor) {
+
+        if (actor == null || actor.isBlank()) {
+            throw new IllegalArgumentException("Approver is required.");
+        }
+
+        String id = experimentId(reference);
+        String status = scopedSql("""
+                        SELECT status
+                        FROM recipe_experiments
+                        WHERE id = :id
+                          AND kitchen_id = :workspaceKitchen
+                        FOR UPDATE
+                        """)
+                .param("id", id)
+                .query(String.class)
+                .optional()
+                .orElseThrow(() ->
+                        new IllegalArgumentException("Experiment not found"));
+        if ("ACTIVE".equals(status)) {
+            return;
+        }
+        if (!"PROPOSED".equals(status)) {
+            throw new IllegalStateException(
+                    "Only a proposed experiment can be approved."
+            );
+        }
+        Instant now = Instant.now();
+
+        int changed = scopedSql("""
                         UPDATE recipe_experiments
                         SET status = 'ACTIVE',
-                            approved_at = :now
+                            approved_by = :actor,
+                            approved_at = :now,
+                            updated_at = :now,
+                            version = version + 1
                         WHERE id = :id
+                          AND kitchen_id = :workspaceKitchen
+                          AND status = 'PROPOSED'
                         """)
-                .param("now", Instant.now())
+                .param("actor", actor.trim())
+                .param("now", JdbcTimestamp.utc(now))
                 .param("id", id)
                 .update();
+        if (changed != 1) {
+            throw new IllegalArgumentException("Experiment not found");
+        }
 
         addActivity(
                 "Recipe experiment",
@@ -1482,17 +1783,20 @@ public class OperationalRepository {
 
     private String experimentId(String reference) {
 
-        return jdbc.sql("""
+        return scopedSql("""
                         SELECT id
                         FROM recipe_experiments
-                        WHERE id = :reference
-                           OR dish_id = :reference
+                        WHERE kitchen_id = :workspaceKitchen
+                          AND (id = :reference OR dish_id = :reference)
+                          AND status IN ('PROPOSED', 'ACTIVE')
                         ORDER BY
                             CASE
                                 WHEN id = :reference THEN 0
                                 ELSE 1
                             END,
-                            id DESC
+                            CASE WHEN status = 'ACTIVE' THEN 0 ELSE 1 END,
+                            updated_at DESC,
+                            id
                         LIMIT 1
                         """)
                 .param("reference", reference)
@@ -1502,9 +1806,60 @@ public class OperationalRepository {
                         new IllegalArgumentException("Experiment not found"));
     }
 
+    private void requireWorkspaceCategory(String categoryId) {
+        if (categoryId != null && menuCategory(categoryId).isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Menu category was not found in this kitchen."
+            );
+        }
+    }
+
+    private void requireWorkspaceDish(String dishId) {
+        if (dish(dishId).isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Dish was not found in this kitchen."
+            );
+        }
+    }
+
+    private void requireWorkspaceIngredient(String ingredientId) {
+        if (ingredient(ingredientId).isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Ingredient was not found in this kitchen."
+            );
+        }
+    }
+
+    private void requireWorkspaceRecipeForDish(
+            String recipeId,
+            String dishId
+    ) {
+        RecipeVersion recipe = recipe(recipeId).orElseThrow(() ->
+                new IllegalArgumentException(
+                        "Recipe version was not found in this kitchen."
+                ));
+        if (!recipe.dishId().equals(dishId)) {
+            throw new IllegalArgumentException(
+                    "Recipe version does not belong to the selected dish."
+            );
+        }
+    }
+
+    private JdbcClient.StatementSpec scopedSql(String sql) {
+        return jdbc.sql(sql)
+                .param("workspaceKitchen", workspace.kitchenId())
+                .param("workspaceLocation", workspace.locationId());
+    }
+
     // ============================================================
     // ROW MAPPERS
     // ============================================================
+
+    private Instant instant(ResultSet rs, String column)
+            throws SQLException {
+        OffsetDateTime value = rs.getObject(column, OffsetDateTime.class);
+        return value == null ? null : value.toInstant();
+    }
 
     private ReceiptImport receipt(ResultSet rs)
             throws SQLException {
@@ -1512,7 +1867,7 @@ public class OperationalRepository {
         String id = rs.getString(1);
 
         List<ReceiptImport.ReceiptItem> items =
-                jdbc.sql("""
+                scopedSql("""
                                 SELECT id,
                                        raw_name,
                                        ingredient_id,
@@ -1522,9 +1877,15 @@ public class OperationalRepository {
                                        unit_price,
                                        confidence,
                                        selected
-                                FROM receipt_items
-                                WHERE receipt_id = :id
-                                ORDER BY id
+                                FROM receipt_items item
+                                WHERE item.receipt_id = :id
+                                  AND EXISTS (
+                                    SELECT 1
+                                    FROM receipt_imports receipt
+                                    WHERE receipt.id = item.receipt_id
+                                      AND receipt.kitchen_id = :workspaceKitchen
+                                      AND receipt.location_id = :workspaceLocation)
+                                ORDER BY item.id
                                 """)
                         .param("id", id)
                         .query((line, rowNum) ->
@@ -1533,10 +1894,10 @@ public class OperationalRepository {
                                         line.getString(2),
                                         line.getString(3),
                                         line.getString(4),
-                                        line.getDouble(5),
+                                        line.getBigDecimal(5),
                                         line.getString(6),
                                         line.getBigDecimal(7),
-                                        line.getDouble(8),
+                                        line.getBigDecimal(8),
                                         line.getBoolean(9)))
                         .list();
 
@@ -1595,7 +1956,7 @@ public class OperationalRepository {
         return new StockLot(
                 rs.getString(1),
                 rs.getString(2),
-                rs.getDouble(3),
+                rs.getBigDecimal(3),
                 rs.getString(4),
                 rs.getObject(5, LocalDate.class),
                 rs.getObject(6, LocalDate.class),

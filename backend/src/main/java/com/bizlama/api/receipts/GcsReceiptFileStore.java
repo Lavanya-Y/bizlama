@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
@@ -19,14 +20,38 @@ import com.google.cloud.storage.StorageOptions;
 )
 public class GcsReceiptFileStore implements ReceiptFileStore {
 
-    private final Storage storage =
-            StorageOptions.getDefaultInstance().getService();
-
+    private final Storage storage;
     private final String bucket;
+    private final String readinessObject;
 
     public GcsReceiptFileStore(
-            @Value("${bizlama.receipts.bucket}") String bucket) {
+            @Value("${bizlama.receipts.bucket}") String bucket,
+            @Value("${bizlama.receipts.readiness-object}")
+            String readinessObject
+    ) {
+        this(
+                StorageOptions.getDefaultInstance().getService(),
+                bucket,
+                readinessObject
+        );
+    }
+
+    GcsReceiptFileStore(Storage storage, String bucket) {
+        this(storage, bucket, ".well-known/bizlama-receipt-readiness");
+    }
+
+    GcsReceiptFileStore(
+            Storage storage,
+            String bucket,
+            String readinessObject
+    ) {
+        this.storage = storage;
         this.bucket = bucket;
+        this.readinessObject = readinessObject;
+    }
+
+    boolean readinessObjectAccessible() {
+        return storage.get(BlobId.of(bucket, readinessObject)) != null;
     }
 
     @Override
@@ -49,19 +74,46 @@ public class GcsReceiptFileStore implements ReceiptFileStore {
                     .setContentType(contentType)
                     .build();
 
-            storage.create(blob, file.getBytes());
+            Blob created = storage.create(
+                    blob,
+                    file.getBytes(),
+                    Storage.BlobTargetOption.doesNotExist()
+            );
 
             return new StoredReceipt(
                     "gs://" + bucket + "/" + objectName,
-                    contentType
+                    contentType,
+                    objectName,
+                    created.getGeneration()
             );
 
-        } catch (IOException error) {
+        } catch (IOException | RuntimeException error) {
             throw new IllegalStateException(
                     "Could not upload receipt to Cloud Storage",
                     error
             );
         }
+    }
+
+    @Override
+    public void delete(StoredReceipt receipt) {
+        String expectedUri = "gs://" + bucket + "/" + receipt.storageKey();
+        if (!expectedUri.equals(receipt.uri()) || receipt.generation() == null) {
+            throw new IllegalArgumentException(
+                    "Receipt does not belong to configured Cloud Storage"
+            );
+        }
+        BlobId blob = BlobId.of(
+                bucket,
+                receipt.storageKey(),
+                receipt.generation()
+        );
+        storage.delete(
+                blob,
+                Storage.BlobSourceOption.generationMatch(
+                        receipt.generation()
+                )
+        );
     }
 
     private String safeName(String name) {

@@ -4,5 +4,5 @@ public record MenuCategory (
     String id,
     String name
 ) {
-    
+
 }

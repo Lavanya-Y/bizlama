@@ -9,6 +9,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -25,7 +26,9 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 
@@ -33,25 +36,120 @@ import com.nimbusds.jose.jwk.source.ImmutableSecret;
 @EnableConfigurationProperties(AuthProperties.class)
 public class SecurityConfig {
 
+    private static final String[] READ_ROLES = {
+            "OWNER",
+            "ADMIN",
+            "KITCHEN_OPERATOR",
+            "VIEWER"
+    };
+
+    private static final String[] OPERATIONAL_WRITE_ROLES = {
+            "OWNER",
+            "ADMIN",
+            "KITCHEN_OPERATOR"
+    };
+
+    private static final String[] HIGH_RISK_WRITE_ROLES = {
+            "OWNER",
+            "ADMIN"
+    };
+
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            JwtAuthenticationConverter jwtAuthenticationConverter,
+            WorkspaceAccessPolicy workspaceAccessPolicy
+    ) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
+                .cors(Customizer.withDefaults())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                "/api/auth/config",
-                                "/api/auth/login",
                                 "/actuator/health",
+                                "/actuator/health/**",
                                 "/error"
                         ).permitAll()
-                        .requestMatchers("/api/**").authenticated()
+                        .requestMatchers("/actuator/**").denyAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/auth/config"
+                        ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/auth/login"
+                        ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/auth/me"
+                        ).authenticated()
+                        .requestMatchers(
+                                HttpMethod.OPTIONS,
+                                "/api/**"
+                        ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/**"
+                        ).hasAnyRole(READ_ROLES)
+                        .requestMatchers(
+                                HttpMethod.HEAD,
+                                "/api/**"
+                        ).hasAnyRole(READ_ROLES)
+                        .requestMatchers(
+                                "/api/recipes/**",
+                                "/api/experiments/*/approve",
+                                "/api/stock/purchases",
+                                "/api/receipts/*/review",
+                                "/api/receipts/*/confirm",
+                                "/api/events/confirm",
+                                "/api/events/*/supersede",
+                                "/api/recommendations/*/approve",
+                                "/api/recommendations/*/apply",
+                                "/api/recommendations/*/reverse"
+                        ).hasAnyRole(HIGH_RISK_WRITE_ROLES)
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/**"
+                        ).hasAnyRole(OPERATIONAL_WRITE_ROLES)
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/api/**"
+                        ).hasAnyRole(OPERATIONAL_WRITE_ROLES)
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/api/**"
+                        ).hasAnyRole(OPERATIONAL_WRITE_ROLES)
+                        .requestMatchers(
+                                HttpMethod.DELETE,
+                                "/api/**"
+                        ).hasAnyRole(OPERATIONAL_WRITE_ROLES)
+                        .requestMatchers("/api/**").denyAll()
                         .anyRequest().permitAll()
                 )
                 .oauth2ResourceServer(oauth ->
-                        oauth.jwt(Customizer.withDefaults()))
+                        oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(
+                                jwtAuthenticationConverter
+                        )))
+                .addFilterBefore(
+                        new WorkspaceMembershipFilter(workspaceAccessPolicy),
+                        AuthorizationFilter.class
+                )
                 .build();
+    }
+
+    @Bean
+    JwtAuthenticationConverter jwtAuthenticationConverter(
+            WorkspaceAccessPolicy workspaceAccessPolicy
+    ) {
+        JwtAuthenticationConverter converter =
+                new JwtAuthenticationConverter();
+
+        converter.setJwtGrantedAuthoritiesConverter(
+                new JwtRoleAuthoritiesConverter(workspaceAccessPolicy)
+        );
+
+        return converter;
     }
 
     @Bean

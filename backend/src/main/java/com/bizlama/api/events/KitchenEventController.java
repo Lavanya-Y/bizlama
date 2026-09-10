@@ -1,93 +1,103 @@
 package com.bizlama.api.events;
 
 import jakarta.validation.Valid;
-
+import jakarta.validation.constraints.Min;
 import java.util.List;
-
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-
-import com.bizlama.api.store.OperationalRepository;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/events")
 public class KitchenEventController {
 
-    private final KitchenEventParser kitchenEventParser;
-    private final KitchenEventApplicationService applicationService;
-    private final OperationalRepository repository;
-    private final double autoApplyThreshold;
+    private final KitchenEventIntentRouter router;
+    private final KitchenEventProposalService proposals;
 
     public KitchenEventController(
-            KitchenEventParser kitchenEventParser,
-            KitchenEventApplicationService applicationService,
-            OperationalRepository repository,
-            @Value("${bizlama.automation.auto-apply-threshold:0.90}")
-            double autoApplyThreshold
+            KitchenEventIntentRouter router,
+            KitchenEventProposalService proposals
     ) {
-        this.kitchenEventParser = kitchenEventParser;
-        this.applicationService = applicationService;
-        this.repository = repository;
-        this.autoApplyThreshold = autoApplyThreshold;
+        this.router = router;
+        this.proposals = proposals;
     }
 
     @PostMapping("/parse")
     public ParseKitchenEventResponse parse(
             @Valid @RequestBody ParseKitchenEventRequest request
     ) {
-        List<ParsedKitchenEvent> events =
-                kitchenEventParser.parseMany(request.statement());
-
-        boolean autoApply = events.stream()
-                .allMatch(event ->
-                        event.confidence() > autoApplyThreshold
-                );
-
-        if (autoApply) {
-            applicationService.applyAll(events);
+        List<ParsedKitchenEvent> events;
+        try {
+            events = router.route(request.statement());
+        } catch (ResponseStatusException error) {
+            return ParseKitchenEventResponse.unknown(
+                    error.getReason() == null
+                            ? "Clarify the activity and try again."
+                            : error.getReason()
+            );
         }
-
-        events.forEach(event ->
-                repository.auditAiAction(
-                        event.type().name(),
-                        request.statement(),
-                        event.itemId(),
-                        event.confidence(),
-                        autoApply
-                                ? "AUTO_APPLIED"
-                                : "AWAITING_CONFIRMATION",
-                        event.decisionReason()
-                )
-        );
+        KitchenEventProposalService.Proposal proposal =
+                proposals.create(request.statement(), events);
 
         return new ParseKitchenEventResponse(
-                events,
-                !autoApply,
-                autoApply
+                proposal.id(),
+                proposal.version(),
+                proposal.riskTier(),
+                proposal.expiresAt(),
+                proposal.events(),
+                true,
+                false
         );
     }
 
     @PostMapping("/confirm")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void confirm(
-            @Valid @RequestBody ConfirmKitchenEventRequest request
+            @Valid @RequestBody ConfirmKitchenEventRequest request,
+            @AuthenticationPrincipal Jwt jwt
     ) {
-        applicationService.applyAll(request.events());
+        KitchenEventProposalService.ConfirmationResult result =
+                proposals.confirm(
+                        request.proposalId(),
+                        request.expectedVersion(),
+                        request.idempotencyKey(),
+                        actor(jwt)
+                );
+        if (result.expired()) {
+            throw new ResponseStatusException(
+                    HttpStatus.GONE,
+                    "Kitchen event proposal expired; parse the statement again."
+            );
+        }
+    }
 
-        request.events().forEach(event ->
-                repository.auditAiAction(
-                        event.type().name(),
-                        event.summary(),
-                        event.itemId(),
-                        event.confidence(),
-                        "OWNER_CONFIRMED",
-                        event.decisionReason()
-                )
-        );
+    @PostMapping("/{id}/supersede")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void supersede(
+            @PathVariable String id,
+            @Valid @RequestBody SupersedeRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        proposals.supersede(id, request.expectedVersion(), actor(jwt));
+    }
+
+    private String actor(Jwt jwt) {
+        if (jwt == null) {
+            return "local-owner";
+        }
+        String email = jwt.getClaimAsString("email");
+        return email == null || email.isBlank()
+                ? jwt.getSubject()
+                : email;
+    }
+
+    public record SupersedeRequest(@Min(1) int expectedVersion) {
     }
 }

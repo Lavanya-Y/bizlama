@@ -4,7 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { DashboardApiService } from '../../core/api/dashboard-api.service';
 import { KitchenEventsApiService } from '../../core/api/kitchen-events-api.service';
 import { RecentEvent } from '../../core/models/dashboard';
-import { ParsedKitchenEvent } from '../../core/models/kitchen-event';
+import {
+    ParsedKitchenEvent,
+    ParseKitchenEventResponse
+} from '../../core/models/kitchen-event';
 
 @Component({
     selector: 'app-activity',
@@ -16,12 +19,8 @@ export class ActivityComponent implements OnInit {
     private readonly dashboardApi = inject(DashboardApiService);
 
     protected readonly statement = signal('');
-    protected readonly examples = [
-        'Bought 2 kg sugar',
-        'Made 10 paneer sandwiches',
-        'Wasted 300 g tomatoes'
-    ];
     protected readonly parsedEvents = signal<ParsedKitchenEvent[]>([]);
+    protected readonly proposal = signal<ParseKitchenEventResponse | null>(null);
     protected readonly recentEvents = signal<RecentEvent[]>([]);
     protected readonly error = signal<string | null>(null);
     protected readonly success = signal<string | null>(null);
@@ -38,17 +37,15 @@ export class ActivityComponent implements OnInit {
         this.loadRecentEvents();
     }
 
-    protected useExample(example: string): void {
-        this.statement.set(example);
-        this.parsedEvents.set([]);
-        this.error.set(null);
-        this.success.set(null);
-    }
-
     protected parseEvent(): void {
         const statement = this.statement().trim();
 
         if (!statement) {
+            return;
+        }
+
+        if (this.proposal()) {
+            this.error.set('Discard the current review before parsing another update.');
             return;
         }
 
@@ -59,19 +56,18 @@ export class ActivityComponent implements OnInit {
 
         this.eventsApi.parse(statement).subscribe({
             next: (response) => {
-                if (response.autoApplied) {
-                    this.success.set(
-                        `${response.events.length} ${response.events.length === 1 ? 'update' : 'updates'
-                        } saved automatically. ${response.events
-                            .map((event) => event.summary)
-                            .join(' . ')}`
+                if (!response.requiresConfirmation || !response.proposalId) {
+                    this.error.set(
+                        response.clarification ??
+                        'Clarify the activity and try again.'
                     );
-                    this.statement.set('');
-                    this.loadRecentEvents();
-                } else {
-                    this.parsedEvents.set(response.events);
+                    this.isProcessing.set(false);
+                    return;
                 }
-
+                this.proposal.set(response);
+                this.parsedEvents.set(response.events);
+                this.confirmationIdempotencyKey =
+                    `kitchen-event:${response.proposalId}:${crypto.randomUUID()}`;
                 this.isProcessing.set(false);
             },
             error: (response) => {
@@ -85,37 +81,85 @@ export class ActivityComponent implements OnInit {
     }
 
     protected confirmEvent(): void {
+        const proposal = this.proposal();
         const events = this.parsedEvents();
 
-        if (!events.length) {
+        if (!proposal || !proposal.proposalId || !events.length) {
             return;
         }
 
+        this.error.set(null);
         this.isProcessing.set(true);
+        this.confirmationIdempotencyKey ??=
+            `kitchen-event:${proposal.proposalId}:${crypto.randomUUID()}`;
 
-        this.eventsApi.confirm(events).subscribe({
+        this.eventsApi.confirm({
+            proposalId: proposal.proposalId,
+            expectedVersion: proposal.version,
+            idempotencyKey: this.confirmationIdempotencyKey
+        }).subscribe({
             next: () => {
                 this.success.set(
                     `${events.length} ${events.length === 1 ? 'update' : 'updates'
                     } confirmed and saved.`
                 );
-                this.parsedEvents.set([]);
+                this.clearProposal();
                 this.statement.set('');
                 this.isProcessing.set(false);
                 this.loadRecentEvents();
             },
-            error: () => {
-                this.error.set('BizLaMa could not save that update.');
+            error: (response) => {
+                const terminal = response.status === 409 || response.status === 410;
+                if (terminal) {
+                    this.clearProposal();
+                }
+                this.error.set(
+                    response.error?.detail ??
+                    (terminal
+                        ? 'That proposal is no longer current. Review the update again.'
+                        : 'BizLaMa could not save that update. Retry will use the same confirmation key.')
+                );
                 this.isProcessing.set(false);
             }
         });
     }
 
     protected discardEvent(): void {
-        this.parsedEvents.set([]);
+        const proposal = this.proposal();
+
+        if (!proposal || !proposal.proposalId) {
+            return;
+        }
+
+        this.error.set(null);
+        this.isProcessing.set(true);
+        this.eventsApi.supersede(
+            proposal.proposalId,
+            proposal.version
+        ).subscribe({
+            next: () => {
+                this.clearProposal();
+                this.isProcessing.set(false);
+            },
+            error: (response) => {
+                if (response.status === 409 || response.status === 410) {
+                    this.clearProposal();
+                }
+                this.error.set(
+                    response.error?.detail ??
+                    'BizLaMa could not discard that review. Please try again.'
+                );
+                this.isProcessing.set(false);
+            }
+        });
     }
 
     protected startVoiceEntry(): void {
+        if (this.proposal()) {
+            this.error.set('Discard the current review before dictating another update.');
+            return;
+        }
+
         const Recognition =
             (window as any).SpeechRecognition ||
             (window as any).webkitSpeechRecognition;
@@ -159,6 +203,14 @@ export class ActivityComponent implements OnInit {
         };
 
         recognition.start();
+    }
+
+    private confirmationIdempotencyKey: string | null = null;
+
+    private clearProposal(): void {
+        this.proposal.set(null);
+        this.parsedEvents.set([]);
+        this.confirmationIdempotencyKey = null;
     }
 
     private loadRecentEvents(): void {

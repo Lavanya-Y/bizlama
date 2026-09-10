@@ -7,7 +7,7 @@ export interface StockLot {
     quantityRemaining: number;
     unit: string;
     purchasedAt: string;
-    expiresAt: string;
+    expiresAt: string | null;
     source: string;
 }
 
@@ -20,7 +20,7 @@ export interface Ingredient {
 
 export interface InventoryLot extends StockLot {
     ingredientName: string;
-    status: 'available' | 'expiring' | 'expired';
+    status: 'available' | 'expiring' | 'expired' | 'quarantined';
 }
 
 export interface InventorySummary {
@@ -46,10 +46,10 @@ export class StockApiService {
         return this.http.get<Ingredient[]>('/api/ingredients');
     }
 
-    createIngredient(name: string) {
+    createIngredient(name: string, baseUnit: 'g' | 'ml' | 'each') {
         return this.http.post<Ingredient>('/api/ingredients', {
             name,
-            baseUnit: 'g'
+            baseUnit
         });
     }
 

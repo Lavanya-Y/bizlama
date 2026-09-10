@@ -5,13 +5,18 @@ import { Experiment } from '../models/experiment';
 @Injectable({ providedIn: 'root' })
 export class ExperimentsApiService {
     private readonly http = inject(HttpClient);
-    private readonly baseUrl = '/api/experiments/paneer-sandwich';
+    private readonly baseUrl = '/api/experiments';
 
-    getExperiment() {
-        return this.http.get<Experiment>(this.baseUrl);
+    getExperiment(reference: string) {
+        return this.http.get<Experiment>(
+            this.baseUrl + '/' + encodeURIComponent(reference)
+        );
     }
 
-    approveExperiment() {
-        return this.http.post<Experiment>(`${this.baseUrl}/approve`, {});
+    approveExperiment(reference: string) {
+        return this.http.post<Experiment>(
+            this.baseUrl + '/' + encodeURIComponent(reference) + '/approve',
+            {}
+        );
     }
 }
